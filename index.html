@@ -28,18 +28,23 @@
     /* Table styles */
     .day-table{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed}
     .day-table thead th{position:sticky;top:0;z-index:5;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;padding:8px 10px;border-bottom:2px solid var(--border2);background:var(--bg);white-space:nowrap;overflow:hidden}
-    .day-row{cursor:pointer;transition:background 0.12s}
+    .day-row{cursor:pointer;transition:background 0.12s,opacity 0.2s}
     .day-row:hover{background:var(--hover)}
-    .day-row td{padding:0;border-bottom:2px solid var(--border2);vertical-align:middle;overflow:hidden;transition:background 0.15s,box-shadow 0.15s}
+    .day-row td{padding:0;border-bottom:2px solid var(--border2);vertical-align:middle;overflow:hidden;transition:background 0.15s,opacity 0.2s}
+
+    /* Dimmed state — when another card is open */
+    .day-row.dimmed{opacity:var(--dim-opacity)}
+    .day-row.dimmed td{border-bottom-color:var(--border)}
+
+    /* Expanded header row — top + right only (left already colored by inline bar) */
     .day-row.expanded td{border-bottom:none;background:var(--surface) !important}
-    .day-row.expanded td:first-child{box-shadow:-5px -6px 0 0 var(--accent), -8px -2px 22px 2px rgba(0,0,0,0.22), 0 -6px 22px 2px rgba(0,0,0,0.18)}
-    .day-row.expanded td:not(:first-child){box-shadow:0 -6px 22px 2px rgba(0,0,0,0.18)}
-    .day-row.expanded td:last-child{box-shadow:8px -2px 22px 2px rgba(0,0,0,0.22), 0 -6px 22px 2px rgba(0,0,0,0.18)}
+    .day-row.expanded td{border-top:2px solid var(--row-color)}
+    .day-row.expanded td:last-child{border-right:2px solid var(--row-color)}
+
+    /* Expanded detail row — right + bottom only */
     .day-detail td{padding:0;background:var(--surface) !important}
-    .day-detail td:first-child{box-shadow:-5px 6px 0 0 var(--accent), -8px 2px 22px 2px rgba(0,0,0,0.22), 0 6px 22px 2px rgba(0,0,0,0.18)}
-    .day-detail td:not(:first-child){box-shadow:0 6px 22px 2px rgba(0,0,0,0.18)}
-    .day-detail td:last-child{box-shadow:8px 2px 22px 2px rgba(0,0,0,0.22), 0 6px 22px 2px rgba(0,0,0,0.18)}
-    .day-detail-border{height:3px;background:var(--border2)}
+    .day-detail td{border-bottom:2px solid var(--row-color)}
+    .day-detail td:last-child{border-right:2px solid var(--row-color)}
 
   </style>
 </head>
@@ -65,7 +70,7 @@
       text:"#2c2418", muted:"#8a7e6e", danger:"#b83030",
       onAccent:"#ffffff", hover:"#f0ebe0",
       tableHead:"#ede8df", rowAlt:"#faf7f2",
-      detailBg:"#f7f3ec",
+      detailBg:"#f7f3ec", dimOpacity:"0.35",
     },
     dark: {
       bg:"#0f0f0f", surface:"#1c1c1e", surface2:"#242426",
@@ -74,7 +79,7 @@
       text:"#ededed", muted:"#8e8e93", danger:"#ff6b6b",
       onAccent:"#0f0f0f", hover:"#252527",
       tableHead:"#1a1a1c", rowAlt:"#1f1f21",
-      detailBg:"#1a1a1c",
+      detailBg:"#1a1a1c", dimOpacity:"0.45",
     },
   };
 
@@ -263,7 +268,8 @@
     const [, forceRerender]      = useState(0);
     const [tab,setTab]           = useState("days");
     const [syncing,setSyncing]   = useState(false);
-    const [expandedId,setExpanded]= useState(null);
+    const [expandedId,setExpanded]    = useState(null);
+    const [expandedCardId,setExpandedCard] = useState(null);
     const [modal,setModal]       = useState(null);
     const [form,setForm]         = useState({});
     const [swapFor,setSwapFor]   = useState(null);
@@ -455,11 +461,12 @@
             );
             return (
               <div>
-                <table className="day-table" style={{"--bg":C.bg,"--border":C.border,"--border2":C.border2,"--hover":C.hover,"--surface":C.surface,"--accent":C.accent}}>
+                <table className="day-table" style={{"--bg":C.bg,"--border":C.border,"--border2":C.border2,"--hover":C.hover,"--surface":C.surface,"--accent":C.accent,"--dim-opacity":C.dimOpacity}}>
                   <tbody>
                     {activeDays.map((day,i)=>(
                       <DayRow key={day.id} day={day} index={data.days.indexOf(day)} total={data.days.length}
                         expanded={expandedId===day.id}
+                        dimmed={!!expandedId&&expandedId!==day.id}
                         swapMode={!!swapFor} isSwapSource={swapFor===day.id}
                         rowIndex={i}
                         settings={settings}
@@ -508,11 +515,14 @@
             );
             return (
               <div>
-                <table className="day-table" style={{"--bg":C.bg,"--border":C.border,"--border2":C.border2,"--hover":C.hover,"--surface":C.surface,"--accent":C.accent2}}>
+                <table className="day-table" style={{"--bg":C.bg,"--border":C.border,"--border2":C.border2,"--hover":C.hover,"--surface":C.surface,"--accent":C.accent2,"--dim-opacity":C.dimOpacity}}>
                   <tbody>
                     {activeCards.map((card,i)=>(
                       <InfoCard key={card.id} card={card} index={data.cards.indexOf(card)} total={data.cards.length}
                         rowIndex={i}
+                        open={expandedCardId===card.id}
+                        onToggle={()=>setExpandedCard(expandedCardId===card.id?null:card.id)}
+                        dimmed={!!expandedCardId&&expandedCardId!==card.id}
                         onEdit={()=>openModal("card",card)}
                         onMove={dir=>moveCard(card.id,dir)}
                         onToggleTodo={(todoId)=>toggleTodo(card.id,todoId)}
@@ -564,7 +574,7 @@
   }
 
   /* ════════ DAY ROW (table row) ════════ */
-  function DayRow({day,index,total,expanded,swapMode,isSwapSource,rowIndex,settings,onToggle,onEdit,onMove,onSwap,onArchive}) {
+  function DayRow({day,index,total,expanded,dimmed,swapMode,isSwapSource,rowIndex,settings,onToggle,onEdit,onMove,onSwap,onArchive}) {
     const isArchived = !!day.archived;
     const hasPlan   = !!(day.planning||"").trim();
     const hasNotes  = !!(day.notes||"").trim();
@@ -594,9 +604,9 @@
     return (
       <>
         {/* Main row */}
-        <tr className={`day-row${expanded?" expanded":""}`}
+        <tr className={`day-row${expanded?" expanded":""}${dimmed?" dimmed":""}`}
           onClick={onToggle}
-          style={{background:rowBg,borderLeft,cursor:"pointer",transition:"background 0.1s",opacity:isArchived&&!expanded?0.55:1}}>
+          style={{background:rowBg,cursor:"pointer",transition:"background 0.1s,opacity 0.2s",opacity:isArchived&&!expanded?0.55:1,"--row-color":badgeHex||C.accent}}>
 
           {/* Date cell */}
           <td style={{width:52,borderLeft,padding:"10px 0",textAlign:"center",verticalAlign:"middle",userSelect:"none"}}>
@@ -639,7 +649,7 @@
         {/* Expanded detail row */}
         {expanded&&!swapMode&&(
           <>
-          <tr className="day-detail">
+          <tr className="day-detail" style={{"--row-color":badgeHex||C.accent}}>
             <td colSpan={3} style={{padding:0}}>
               <div style={{background:C.detailBg,borderLeft,padding:"14px 16px 14px 14px"}}>
 
@@ -681,8 +691,7 @@
   }
 
   /* ════════ INFO CARD (table row, same style as DayRow) ════════ */
-  function InfoCard({card,index,total,rowIndex,onEdit,onMove,onToggleTodo,onArchive}) {
-    const [open,setOpen] = useState(false);
+  function InfoCard({card,index,total,rowIndex,open,onToggle,dimmed,onEdit,onMove,onToggleTodo,onArchive}) {
     const isArchived = !!card.archived;
     const isTodo = card.kind==="todo";
     const badgeHex = card.color?BADGE_COLORS.find(c=>c.id===card.color)?.hex:null;
@@ -703,9 +712,9 @@
 
     return (
       <>
-        <tr className={`day-row${open?" expanded":""}`}
-          onClick={()=>setOpen(!open)}
-          style={{background:rowBg,cursor:"pointer",transition:"background 0.1s",opacity:isArchived&&!open?0.55:1}}>
+        <tr className={`day-row${open?" expanded":""}${dimmed?" dimmed":""}`}
+          onClick={onToggle}
+          style={{background:rowBg,cursor:"pointer",transition:"background 0.1s,opacity 0.2s",opacity:isArchived&&!open?0.55:1,"--row-color":badgeHex||C.accent2}}>
 
           {/* Icon cell (mirrors date cell) */}
           <td style={{width:52,borderLeft,padding:"10px 0",textAlign:"center",verticalAlign:"middle",userSelect:"none"}}>
@@ -744,7 +753,7 @@
         {/* Expanded detail row */}
         {open&&(
           <>
-          <tr className="day-detail">
+          <tr className="day-detail" style={{"--row-color":badgeHex||C.accent2}}>
             <td colSpan={3} style={{padding:0}}>
               <div style={{background:C.detailBg,borderLeft,padding:"14px 16px 14px 14px"}}>
                 {isTodo?(
