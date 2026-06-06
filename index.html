@@ -271,6 +271,9 @@
     const [syncing,setSyncing]   = useState(false);
     const [expandedId,setExpanded]    = useState(null);
     const [expandedCardId,setExpandedCard] = useState(null);
+    const [searchQuery,setSearchQuery]     = useState("");
+    const [showSearch,setShowSearch]       = useState(false);
+    const [confirm,setConfirm]             = useState(null); // {message, onConfirm}
     const [modal,setModal]       = useState(null);
     const [form,setForm]         = useState({});
     const [swapFor,setSwapFor]   = useState(null);
@@ -325,12 +328,23 @@
       } catch { showToast("❌ Connexion impossible"); }
     };
 
+    const showConfirm = (message, onConfirm) => setConfirm({message, onConfirm});
+
     const importData = e => {
       const f=e.target.files[0]; if(!f) return;
       const r=new FileReader();
       r.onload=ev=>{
-        try{const p=JSON.parse(ev.target.result);if(!Array.isArray(p.days)||!Array.isArray(p.cards))throw 0;save(p);showToast("Planning importé ✅");}
-        catch{showToast("Fichier invalide ❌");}
+        try {
+          const p=JSON.parse(ev.target.result);
+          if(!Array.isArray(p.days)||!Array.isArray(p.cards)) throw 0;
+          const hasContent = data.days.some(d=>d.planning||d.notes) || data.cards.length>0;
+          const doImport = () => { save(p); showToast("Planning importé ✅"); };
+          if(hasContent) {
+            showConfirm(`Importer "${p.name||"ce planning"}" écrasera toutes tes données actuelles. Cette action est irréversible.`, doImport);
+          } else {
+            doImport();
+          }
+        } catch { showToast("Fichier invalide ❌"); }
       };
       r.readAsText(f); e.target.value="";
     };
@@ -373,8 +387,18 @@
       if(form.startDate>form.endDate){showToast("⚠️ La date de retour doit être après le départ.");return;}
       const fresh=buildDays(form.startDate,form.endDate);
       const merged=fresh.map(nd=>data.days.find(d=>d.date===nd.date)||nd);
-      save({...data,name:form.name,startDate:form.startDate,endDate:form.endDate,days:merged});
-      closeModal(); showToast(`✨ ${merged.length} jours générés !`);
+      const preserved=merged.filter(d=>data.days.find(dd=>dd.date===d.date&&(dd.planning||dd.notes)));
+      const doGenerate = () => {
+        save({...data,name:form.name,startDate:form.startDate,endDate:form.endDate,days:merged});
+        closeModal();
+        showToast(`✨ ${merged.length} jours générés${preserved.length>0?` · ${preserved.length} conservé${preserved.length>1?"s":""}`:""} !`);
+      };
+      const removed=data.days.filter(d=>d.planning||d.notes).filter(d=>!fresh.find(nd=>nd.date===d.date));
+      if(removed.length>0) {
+        showConfirm(`${removed.length} jour${removed.length>1?"s":""}  avec du contenu ${removed.length>1?"sont":"est"} hors de la nouvelle plage de dates et sera supprimé${removed.length>1?"s":""}. Continuer ?`, doGenerate);
+      } else {
+        doGenerate();
+      }
     };
 
     const deleteDay  = id => { save({...data,days: data.days.filter(d=>d.id!==id)});  closeModal(); };
@@ -403,6 +427,87 @@
     };
 
     const tripLabel = data.startDate&&data.endDate?`${fmtShort(data.startDate)} – ${fmtShort(data.endDate)}`:null;
+
+    // Compteur de jours
+    const dayCounter = (() => {
+      if(!data.startDate || !data.endDate) return null;
+      const today = new Date(); today.setHours(0,0,0,0);
+      const start = new Date(data.startDate+"T12:00:00");
+      const end   = new Date(data.endDate+"T12:00:00");
+      start.setHours(0,0,0,0); end.setHours(0,0,0,0);
+      const diffStart = Math.round((start - today) / 86400000);
+      const diffEnd   = Math.round((end   - today) / 86400000);
+      if(diffStart > 0)  return { label:`Dans ${diffStart} jour${diffStart>1?"s":""}`, color:C.accent2 };
+      if(diffEnd   < 0)  return { label:`Terminé il y a ${Math.abs(diffEnd)} j`, color:C.muted };
+      const dayNum = Math.round((today - start) / 86400000) + 1;
+      const total  = Math.round((end - start) / 86400000) + 1;
+      return { label:`Jour ${dayNum} / ${total}`, color:C.accent };
+    })();
+
+    // Génération HTML statique pour partage
+    const generateShareHtml = () => {
+      const activeDays  = data.days.filter(d=>!d.archived);
+      const activeCards = data.cards.filter(c=>!c.archived);
+      const esc = s => (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+
+      const renderHtmlBlock = text => {
+        if(!text) return "";
+        return (text||"").split("\n").filter(Boolean).map(line => {
+          if(line.trim()==="---") return `<hr style="border:none;border-top:1px solid #cdc3b4;margin:8px 0">`;
+          const isH = line.startsWith("# ");
+          const isS = line.startsWith("> ");
+          const content = isH?line.slice(2):isS?line.slice(2):line;
+          const escaped = esc(content).replace(/\*\*(.+?)\*\*/g,"<strong>$1</strong>").replace(/\*(.+?)\*/g,"<em>$1</em>").replace(/__(.+?)__/g,"<u>$1</u>").replace(/\{[romvftbd]:(.+?)\}/g,"$1").replace(/(https?:\/\/[^\s<]+)/g,`<a href="$1" target="_blank" style="color:#2a7fa8">$1</a>`);
+          if(isH) return `<div style="font-family:'Lora',serif;font-weight:600;font-size:15px;color:#c4622a;margin:10px 0 4px">${escaped}</div>`;
+          if(isS) return `<div style="padding-left:12px;border-left:2px solid #cdc3b4;color:#8a7e6e;font-size:13px;margin-bottom:3px">${escaped}</div>`;
+          return `<div style="font-size:13px;margin-bottom:3px;line-height:1.7">${escaped}</div>`;
+        }).join("");
+      };
+
+      const daysHtml = activeDays.map(day => {
+        const badgeHex = day.color?BADGE_COLORS.find(c=>c.id===day.color)?.hex:"#c4622a";
+        const hasPlan  = !!(day.planning||"").trim();
+        const hasNotes = !!(day.notes||"").trim();
+        if(!hasPlan && !hasNotes) return "";
+        return `
+        <div style="border-left:4px solid ${badgeHex};background:#fff;border-radius:8px;padding:14px 16px;margin-bottom:10px;box-shadow:0 1px 4px rgba(0,0,0,0.07)">
+          <div style="font-family:'Lora',serif;font-size:16px;font-weight:600;color:${badgeHex};margin-bottom:10px;text-transform:capitalize">${esc(fmtLong(day.date))}</div>
+          ${hasPlan?`<div style="margin-bottom:${hasNotes?12:0}px">${renderHtmlBlock(day.planning)}</div>`:""}
+          ${hasNotes?`<div style="background:#f0f7fc;border-radius:6px;padding:10px 12px;border:1px solid #b8d9ed"><div style="font-size:10px;font-weight:700;color:#2a7fa8;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">📌 Infos pratiques</div>${renderHtmlBlock(day.notes)}</div>`:""}
+        </div>`;
+      }).join("");
+
+      const cardsHtml = activeCards.map(card => {
+        const badgeHex = card.color?BADGE_COLORS.find(c=>c.id===card.color)?.hex:"#2a7fa8";
+        const isTodo = card.kind==="todo";
+        const content = isTodo
+          ? (card.todos||[]).map(t=>`<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #e2d9cc"><div style="width:16px;height:16px;border-radius:3px;border:2px solid ${t.done?"#2a7fa8":"#cdc3b4"};background:${t.done?"#2a7fa8":"transparent"};flex-shrink:0;display:flex;align-items:center;justify-content:center">${t.done?`<span style="color:#fff;font-size:9px;font-weight:700">✓</span>`:""}</div><span style="font-size:13px;color:${t.done?"#8a7e6e":"#2c2418"};text-decoration:${t.done?"line-through":"none"}">${esc(t.text)}</span></div>`).join("")
+          : renderHtmlBlock(card.content);
+        return `
+        <div style="border-left:4px solid ${badgeHex};background:#fff;border-radius:8px;padding:12px 14px;box-shadow:0 1px 4px rgba(0,0,0,0.07)">
+          <div style="font-weight:600;font-size:13px;color:#2c2418;margin-bottom:8px">${isTodo?"☑":"📋"} ${esc(card.title||"Sans titre")}</div>
+          ${content}
+        </div>`;
+      }).join("");
+
+      const html = `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(data.name)}</title><link href="https://fonts.googleapis.com/css2?family=Lora:wght@500;600&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet"><style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:'DM Sans',sans-serif;background:#f5f0e8;color:#2c2418;padding:20px;max-width:680px;margin:0 auto}h1{font-family:'Lora',serif;font-size:22px;font-weight:600;margin-bottom:4px}h2{font-family:'Lora',serif;font-size:16px;font-weight:600;color:#c4622a;margin:24px 0 10px;border-bottom:2px solid #e2d9cc;padding-bottom:6px}.meta{font-size:12px;color:#8a7e6e;margin-bottom:20px}.cards-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}@media(max-width:500px){.cards-grid{grid-template-columns:1fr}}.footer{text-align:center;font-size:11px;color:#8a7e6e;margin-top:32px;padding-top:12px;border-top:1px solid #e2d9cc}</style></head><body>
+      <h1>${esc(data.name)}</h1>
+      <div class="meta">${tripLabel?esc(tripLabel)+" · ":""} ${activeDays.length} jours · Généré le ${new Date().toLocaleDateString("fr-FR")}</div>
+      ${daysHtml?`<h2>📅 Programme</h2>${daysHtml}`:""}
+      ${cardsHtml?`<h2>📋 Infos voyage</h2><div class="cards-grid">${cardsHtml}</div>`:""}
+      <div class="footer">Planning Voyage v2.1</div>
+      </body></html>`;
+
+      const blob = new Blob([html], {type:"text/html"});
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement("a");
+      a.href     = url;
+      a.download = (data.name.replace(/[^a-z0-9]/gi,"-").toLowerCase()||"voyage")+"-partage.html";
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(()=>URL.revokeObjectURL(url),1500);
+      showToast("📄 Page de partage générée !");
+    };
+
     const safeTop = "max(20px, env(safe-area-inset-top))";
     const safeBot = "max(24px, env(safe-area-inset-bottom))";
 
@@ -415,25 +520,38 @@
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 16px 0"}}>
             <div onClick={()=>openModal("trip")} style={{cursor:"pointer",flex:1,minWidth:0}}>
               <div style={{fontFamily:C.serif,fontSize:18,fontWeight:600,color:C.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",lineHeight:1.2}}>{data.name}</div>
-              {tripLabel&&<div style={{fontSize:11,color:C.accent,marginTop:1,fontWeight:500}}>{tripLabel} · {data.days.filter(d=>!d.archived).length} jours</div>}
+              <div style={{display:"flex",alignItems:"center",gap:8,marginTop:1,flexWrap:"wrap"}}>
+                {tripLabel&&<div style={{fontSize:11,color:C.accent,fontWeight:500}}>{tripLabel} · {data.days.filter(d=>!d.archived).length} jours</div>}
+                {dayCounter&&<div style={{fontSize:11,fontWeight:700,color:dayCounter.color,background:`${dayCounter.color}15`,padding:"1px 7px",borderRadius:10,border:`1px solid ${dayCounter.color}30`}}>{dayCounter.label}</div>}
+              </div>
             </div>
-            <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
-              {/* Theme toggle inline */}
-              <button
-                onClick={()=>saveSettings({...settings,theme:currentTheme==="light"?"dark":"light"})}
-                style={{padding:"5px 9px",borderRadius:8,background:C.surface,border:`1px solid ${C.border2}`,color:C.muted,fontSize:13,cursor:"pointer"}}
-                title="Changer de thème">
-                {currentTheme==="light"?"🌙":"☀️"}
-              </button>
-              <div style={{fontSize:10,color:syncing?C.accent:C.muted,minWidth:20,textAlign:"center"}}>{syncing?"⟳":"✓"}</div>
+            <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
+              <button onClick={()=>{setShowSearch(!showSearch);setSearchQuery("");}} style={{padding:"5px 9px",borderRadius:8,background:showSearch?`${C.accent}15`:C.surface,border:`1px solid ${showSearch?C.accent:C.border2}`,color:showSearch?C.accent:C.muted,fontSize:13,cursor:"pointer"}} title="Rechercher">🔍</button>
+              <button onClick={generateShareHtml} style={{padding:"5px 9px",borderRadius:8,background:C.surface,border:`1px solid ${C.border2}`,color:C.muted,fontSize:13,cursor:"pointer"}} title="Exporter en page partageable">📤</button>
+              <button onClick={()=>saveSettings({...settings,theme:currentTheme==="light"?"dark":"light"})} style={{padding:"5px 9px",borderRadius:8,background:C.surface,border:`1px solid ${C.border2}`,color:C.muted,fontSize:13,cursor:"pointer"}} title="Changer de thème">{currentTheme==="light"?"🌙":"☀️"}</button>
+              <div style={{fontSize:10,color:syncing?C.accent:C.muted,minWidth:16,textAlign:"center"}}>{syncing?"⟳":"✓"}</div>
               <button onClick={()=>setShowSettings(true)} style={{padding:"5px 9px",borderRadius:8,background:C.surface,border:`1px solid ${C.border2}`,color:C.muted,fontSize:14,cursor:"pointer"}}>⚙️</button>
             </div>
           </div>
 
+          {/* Search bar */}
+          {showSearch&&(
+            <div style={{padding:"8px 16px 0"}}>
+              <input
+                autoFocus
+                type="text"
+                placeholder={tab==="days"?"Rechercher dans le programme...":"Rechercher dans les infos..."}
+                value={searchQuery}
+                onChange={e=>setSearchQuery(e.target.value)}
+                style={{width:"100%",padding:"9px 12px",borderRadius:9,background:C.surface,border:`1.5px solid ${C.accent}`,color:C.text,fontSize:15,outline:"none"}}
+              />
+            </div>
+          )}
+
           {/* Tabs */}
           <div style={{display:"flex",marginTop:8}}>
             {[["days","📅 Programme"],["cards","📋 Infos voyage"]].map(([id,label])=>(
-              <button key={id} onClick={()=>setTab(id)} style={{flex:1,padding:"9px 0 10px",background:"none",border:"none",cursor:"pointer",color:tab===id?C.accent:C.muted,fontSize:13,fontWeight:tab===id?600:400,borderBottom:tab===id?`2px solid ${C.accent}`:"2px solid transparent",transition:"color 0.15s"}}>{label}</button>
+              <button key={id} onClick={()=>{setTab(id);setSearchQuery("");}} style={{flex:1,padding:"9px 0 10px",background:"none",border:"none",cursor:"pointer",color:tab===id?C.accent:C.muted,fontSize:13,fontWeight:tab===id?600:400,borderBottom:tab===id?`2px solid ${C.accent}`:"2px solid transparent",transition:"color 0.15s"}}>{label}</button>
             ))}
           </div>
         </div>
@@ -451,13 +569,20 @@
 
           {/* ── DAYS TAB — TABLE VIEW ── */}
           {tab==="days"&&(()=>{
-            const activeDays   = data.days.filter(d=>!d.archived);
+            const q = searchQuery.toLowerCase().trim();
+            const activeDays   = data.days.filter(d=>!d.archived).filter(d=>!q||fmtLong(d.date).toLowerCase().includes(q)||(d.planning||"").toLowerCase().includes(q)||(d.notes||"").toLowerCase().includes(q));
             const archivedDays = data.days.filter(d=> d.archived);
             if(data.days.length===0) return (
               <div style={{textAlign:"center",padding:"60px 20px",color:C.muted}}>
                 <div style={{fontSize:34,marginBottom:12}}>✈️</div>
                 <div style={{fontSize:15,marginBottom:6,color:C.text}}>Aucun jour planifié</div>
                 <div style={{fontSize:13}}>Ouvre "Modifier" et génère les jours depuis les dates du voyage</div>
+              </div>
+            );
+            if(activeDays.length===0 && searchQuery) return (
+              <div style={{textAlign:"center",padding:"60px 20px",color:C.muted}}>
+                <div style={{fontSize:28,marginBottom:10}}>🔍</div>
+                <div style={{fontSize:14,color:C.text}}>Aucun résultat pour "<strong>{searchQuery}</strong>"</div>
               </div>
             );
             return (
@@ -505,13 +630,20 @@
 
           {/* ── CARDS TAB — table view (same as days) ── */}
           {tab==="cards"&&(()=>{
-            const activeCards   = data.cards.filter(c=>!c.archived);
+            const q = searchQuery.toLowerCase().trim();
+            const activeCards   = data.cards.filter(c=>!c.archived).filter(c=>!q||(c.title||"").toLowerCase().includes(q)||(c.content||"").toLowerCase().includes(q)||(c.todos||[]).some(t=>t.text.toLowerCase().includes(q)));
             const archivedCards = data.cards.filter(c=> c.archived);
             if(data.cards.length===0) return (
               <div style={{textAlign:"center",padding:"60px 20px",color:C.muted}}>
                 <div style={{fontSize:34,marginBottom:12}}>📋</div>
                 <div style={{fontSize:15,marginBottom:6,color:C.text}}>Aucune info ajoutée</div>
                 <div style={{fontSize:13}}>Appuie sur + pour ajouter une info ou une liste TODO</div>
+              </div>
+            );
+            if(activeCards.length===0 && searchQuery) return (
+              <div style={{textAlign:"center",padding:"60px 20px",color:C.muted}}>
+                <div style={{fontSize:28,marginBottom:10}}>🔍</div>
+                <div style={{fontSize:14,color:C.text}}>Aucun résultat pour "<strong>{searchQuery}</strong>"</div>
               </div>
             );
             return (
@@ -556,6 +688,20 @@
         </div>
 
         <div style={{textAlign:"center",padding:"6px 0 0",fontSize:10,color:`${C.muted}88`,letterSpacing:0.5}}>v2.1</div>
+
+        {/* Confirm dialog */}
+        {confirm&&(
+          <div onClick={()=>setConfirm(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",zIndex:60,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+            <div onClick={e=>e.stopPropagation()} style={{background:C.surface,borderRadius:16,padding:"24px 20px",maxWidth:340,width:"100%",border:`1px solid ${C.border2}`,boxShadow:"0 8px 32px rgba(0,0,0,0.2)"}}>
+              <div style={{fontSize:22,textAlign:"center",marginBottom:12}}>⚠️</div>
+              <div style={{fontSize:14,color:C.text,lineHeight:1.6,marginBottom:20,textAlign:"center"}}>{confirm.message}</div>
+              <div style={{display:"flex",gap:10}}>
+                <button onClick={()=>setConfirm(null)} style={{flex:1,padding:"12px",borderRadius:10,background:C.surface2,border:`1px solid ${C.border2}`,color:C.muted,fontSize:14,cursor:"pointer",fontWeight:500}}>Annuler</button>
+                <button onClick={()=>{confirm.onConfirm();setConfirm(null);}} style={{flex:1,padding:"12px",borderRadius:10,background:C.danger,border:"none",color:"#fff",fontSize:14,cursor:"pointer",fontWeight:600}}>Confirmer</button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* FAB */}
         <button onClick={()=>openModal(tab==="days"?"day":"card")} style={{position:"fixed",bottom:`calc(16px + ${safeBot})`,right:"max(16px, calc(50vw - var(--app-max-width) / 2 + 16px))",width:52,height:52,borderRadius:"50%",background:C.accent,border:"none",cursor:"pointer",fontSize:26,color:C.onAccent,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",boxShadow:`0 3px 14px ${C.accent}66`,zIndex:20}}>+</button>
