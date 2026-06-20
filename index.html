@@ -10,9 +10,9 @@
   <link rel="manifest" href="manifest.json"/>
   <title>Planning Voyage v2</title>
   <link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,500;0,600;1,500&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&display=swap" rel="stylesheet"/>
-  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone@7.25.6/babel.min.js"></script>
   <style>
     *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
     html,body{height:100%;overscroll-behavior:none;transition:background 0.2s}
@@ -57,7 +57,7 @@
   const KEY  = "tripplanner_v3";
   const SKEY = "tripplanner_settings";
   const DEF  = { name:"Mon Voyage", startDate:"", endDate:"", days:[], cards:[] };
-  const DEFS = { previewLines:2, fontSize:14, remoteUrl:"", theme:"light", gistId:"", gistToken:"", gistFilename:"voyage.json" };
+  const DEFS = { previewLines:2, fontSize:14, theme:"light", workerUrl:"", workerToken:"", remoteUrl:"" };
 
   const uid   = () => Date.now().toString(36)+Math.random().toString(36).slice(2);
   const load  = () => { try { const s=localStorage.getItem(KEY);  return s?JSON.parse(s):DEF;           } catch { return DEF;  } };
@@ -312,20 +312,21 @@
       } catch { showToast("❌ Copie impossible"); }
     };
 
-    const publishToGist = async () => {
-      const id = settings.gistId?.trim(); const token = settings.gistToken?.trim(); const filename = (settings.gistFilename?.trim() || "voyage.json");
-      if(!id || !token) { showToast("⚠️ Configure ton Gist ID et Token"); return; }
+    const publishToWorker = async () => {
+      const url   = settings.workerUrl?.trim();
+      const token = settings.workerToken?.trim();
+      if(!url) { showToast("⚠️ Configure l'URL du Worker"); return; }
       showToast("⏳ Publication...");
       try {
-        const body = { files: { [filename]: { content: JSON.stringify(data,null,2) } } };
-        const res = await fetch(`https://api.github.com/gists/${encodeURIComponent(id)}`, {
-          method:"PATCH", headers:{"Authorization":`Bearer ${token}`,"Accept":"application/vnd.github+json","Content-Type":"application/json"}, body:JSON.stringify(body),
+        const headers = {"Content-Type":"application/json"};
+        if(token) headers["X-Auth-Token"] = token;
+        const res = await fetch(`${url}/planning`, {
+          method:"PUT", headers, body:JSON.stringify(data),
         });
-        if(res.status===401){showToast("❌ Token invalide");return;}
-        if(res.status===404){showToast("❌ Gist introuvable");return;}
-        if(!res.ok){showToast(`❌ Erreur ${res.status}`);return;}
-        showToast("✅ Gist publié !");
-      } catch { showToast("❌ Connexion impossible"); }
+        if(res.status===401||res.status===403){ showToast("❌ Token invalide"); return; }
+        if(!res.ok){ showToast(`❌ Erreur ${res.status}`); return; }
+        showToast("✅ Planning publié !");
+      } catch { showToast("❌ Worker inaccessible"); }
     };
 
     const showConfirm = (message, onConfirm) => setConfirm({message, onConfirm});
@@ -341,33 +342,26 @@
           const doImport = () => { save(p); showToast("Planning importé ✅"); };
           if(hasContent) {
             showConfirm(`Importer "${p.name||"ce planning"}" écrasera toutes tes données actuelles. Cette action est irréversible.`, doImport);
-          } else {
-            doImport();
-          }
+          } else { doImport(); }
         } catch { showToast("Fichier invalide ❌"); }
       };
       r.readAsText(f); e.target.value="";
     };
 
-    const toRawUrl = url => {
-      if(!url) return url; let m;
-      m = url.match(/drive\.google\.com\/file\/d\/([^/]+)/); if(m) return `https://drive.google.com/uc?export=download&id=${m[1]}`;
-      m = url.match(/drive\.google\.com\/open\?id=([^&]+)/); if(m) return `https://drive.google.com/uc?export=download&id=${m[1]}`;
-      m = url.match(/^(https:\/\/gist\.githubusercontent\.com\/[^/]+\/[a-f0-9]+)\/raw\/[a-f0-9]+\/(.+)$/); if(m) return `${m[1]}/raw/${m[2]}`;
-      m = url.match(/^https:\/\/gist\.github\.com\/([^/]+)\/([a-f0-9]+)\/?$/); if(m) return `https://gist.githubusercontent.com/${m[1]}/${m[2]}/raw`;
-      if(url.includes("dropbox.com")) return url.replace(/([?&])dl=0/,"$1dl=1");
-      return url;
-    };
-
     const loadFromUrl = async (url) => {
-      if(!url || !url.trim()){showToast("⚠️ Aucune URL configurée");return;}
-      const finalUrl = toRawUrl(url.trim()); showToast("⏳ Téléchargement...");
+      if(!url || !url.trim()){ showToast("⚠️ Aucune URL configurée"); return; }
+      showToast("⏳ Synchronisation...");
+      const finalUrl = url.trim().replace(/\/$/, "") + "/planning";
       try {
-        const res = await fetch(finalUrl, { cache:"no-store" }); if(!res.ok) throw new Error("HTTP "+res.status);
-        const text = await res.text(); const p = JSON.parse(text);
-        if(!Array.isArray(p.days) || !Array.isArray(p.cards)) throw new Error("format");
-        save(p); showToast("✅ Planning à jour !");
-      } catch(err) { if(err.message==="format") showToast("❌ Format du fichier invalide"); else showToast("❌ Lien inaccessible (CORS ou URL)"); }
+        const res = await fetch(finalUrl, { cache:"no-store" });
+        if(!res.ok) throw new Error("HTTP "+res.status);
+        const p = await res.json();
+        if(!Array.isArray(p.days)||!Array.isArray(p.cards)) throw new Error("format");
+        save(p); showToast("✅ Planning synchronisé !");
+      } catch(err) {
+        if(err.message==="format") showToast("❌ Format du fichier invalide");
+        else showToast("❌ URL inaccessible");
+      }
     };
 
     const openModal = (type,item=null) => {
@@ -687,7 +681,7 @@
           })()}
         </div>
 
-        <div style={{textAlign:"center",padding:"6px 0 0",fontSize:10,color:`${C.muted}88`,letterSpacing:0.5}}>v2.1</div>
+        <div style={{textAlign:"center",padding:"6px 0 0",fontSize:10,color:`${C.muted}88`,letterSpacing:0.5}}>v3.0</div>
 
         {/* Confirm dialog */}
         {confirm&&(
@@ -710,7 +704,7 @@
         {toast&&<div style={{position:"fixed",top:`calc(12px + ${safeTop})`,left:"50%",transform:"translateX(-50%)",background:currentTheme==="dark"?"#2c2c2e":"#2c2418",borderRadius:10,padding:"10px 18px",fontSize:13,color:"#fff",zIndex:100,whiteSpace:"nowrap",boxShadow:"0 4px 20px rgba(0,0,0,0.3)",border:`1px solid ${C.border}`}}>{toast}</div>}
 
         {/* Settings */}
-        {showSettings&&<SettingsPanel settings={settings} onChange={saveSettings} onClose={()=>setShowSettings(false)} safeBot={safeBot} exportData={exportData} importData={importData} loadFromUrl={loadFromUrl} copyJson={copyJson} publishToGist={publishToGist}/>}
+        {showSettings&&<SettingsPanel settings={settings} onChange={saveSettings} onClose={()=>setShowSettings(false)} safeBot={safeBot} exportData={exportData} importData={importData} loadFromUrl={loadFromUrl} copyJson={copyJson} publishToWorker={publishToWorker}/>}
 
         {/* Modal */}
         {modal&&<EditModal modal={modal} form={form} setForm={setForm} onClose={closeModal}
@@ -941,15 +935,19 @@
   }
 
   /* ════════ SETTINGS PANEL ════════ */
-  function SettingsPanel({settings,onChange,onClose,safeBot,exportData,importData,loadFromUrl,copyJson,publishToGist}) {
-    const [showHelp, setShowHelp] = useState(false);
-    const [showLocalHelp, setShowLocalHelp] = useState(false);
-    const [showToken, setShowToken] = useState(false);
+  function SettingsPanel({settings,onChange,onClose,safeBot,exportData,importData,loadFromUrl,copyJson,publishToWorker}) {
+    const [showWorkerHelp, setShowWorkerHelp] = useState(false);
+    const [showLocalHelp,  setShowLocalHelp]  = useState(false);
+    const [showToken,      setShowToken]      = useState(false);
     const lbl={fontSize:13,color:C.text,fontWeight:500};
     const val={fontSize:13,color:C.accent,fontWeight:600,minWidth:28,textAlign:"right"};
     const inp={width:"100%",padding:"10px 12px",borderRadius:9,background:C.surface2,border:`1px solid ${C.border2}`,color:C.text,fontSize:16,outline:"none",minWidth:0};
     const section={padding:"14px",borderRadius:11,background:C.surface2,border:`1.5px solid ${C.border2}`,marginBottom:14};
     const sectionTitle={fontSize:11,fontWeight:700,color:C.accent,textTransform:"uppercase",letterSpacing:1,marginBottom:10,display:"flex",alignItems:"center",justifyContent:"space-between"};
+    const iBtn={background:"none",border:`1px solid ${C.accent}55`,borderRadius:"50%",width:22,height:22,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",color:C.accent,fontSize:12,fontWeight:700,padding:0};
+    const workerReady = !!settings.workerUrl?.trim();
+    const syncReady   = !!settings.remoteUrl?.trim();
+
     return (
       <div onClick={e=>e.target===e.currentTarget&&onClose()} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.35)",zIndex:50,display:"flex",flexDirection:"column",justifyContent:"flex-end"}}>
         <div style={{background:C.surface,borderRadius:"20px 20px 0 0",border:`1px solid ${C.border}`,padding:`16px 20px calc(${safeBot} + 20px)`,maxHeight:"90svh",overflowY:"auto",touchAction:"pan-y",width:"100%",maxWidth:"var(--app-max-width)",margin:"0 auto"}}>
@@ -959,41 +957,49 @@
             <button onClick={onClose} style={{background:"none",border:"none",color:C.muted,fontSize:22,cursor:"pointer"}}>✕</button>
           </div>
 
+          {/* ── 1. SYNCHRONISER ── */}
           <div style={section}>
             <div style={sectionTitle}>
-              <span>💾 Publier sur Gist</span>
-              <button onClick={()=>setShowHelp(true)} style={{background:"none",border:`1px solid ${C.accent}55`,borderRadius:"50%",width:22,height:22,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",color:C.accent,fontSize:12,fontWeight:700,padding:0}}>i</button>
+              <span>🔄 Synchroniser</span>
+              <button style={iBtn} onClick={()=>setShowWorkerHelp(true)}>i</button>
             </div>
-            <div style={{fontSize:11,fontWeight:600,color:C.muted,textTransform:"uppercase",letterSpacing:0.8,marginBottom:6}}>Configuration</div>
-            <div style={{marginBottom:8}}>
-              <label style={{fontSize:11,color:C.muted,display:"block",marginBottom:4}}>Gist ID</label>
-              <input style={inp} placeholder="ex: abc123def456..." value={settings.gistId||""} onChange={e=>onChange({...settings,gistId:e.target.value})}/>
+            <div style={{fontSize:12,color:C.muted,marginBottom:10,lineHeight:1.5}}>Récupère le planning depuis le Worker Cloudflare (lecture seule — pour les membres du voyage).</div>
+            <input style={inp} placeholder="https://mon-worker.mon-compte.workers.dev" value={settings.remoteUrl||""} onChange={e=>onChange({...settings,remoteUrl:e.target.value})}/>
+            <button onClick={()=>loadFromUrl(settings.remoteUrl)} disabled={!syncReady}
+              style={{width:"100%",marginTop:10,padding:"12px",borderRadius:9,background:syncReady?C.accent2:C.surface,border:`1px solid ${syncReady?C.accent2:C.border2}`,color:syncReady?C.onAccent:C.muted,fontSize:14,fontWeight:600,cursor:syncReady?"pointer":"not-allowed",opacity:syncReady?1:0.7}}>
+              🔄 Synchroniser maintenant
+            </button>
+          </div>
+
+          {/* ── 2. PUBLIER ── */}
+          <div style={section}>
+            <div style={sectionTitle}>
+              <span>📤 Publier les changements</span>
+              <button style={iBtn} onClick={()=>setShowWorkerHelp(true)}>i</button>
             </div>
+            <div style={{fontSize:12,color:C.muted,marginBottom:10,lineHeight:1.5}}>Envoie ton planning vers le Worker Cloudflare pour le partager avec les autres.</div>
             <div style={{marginBottom:8}}>
-              <label style={{fontSize:11,color:C.muted,display:"block",marginBottom:4}}>Token GitHub (fine-grained, scope Gist)</label>
+              <label style={{fontSize:11,color:C.muted,display:"block",marginBottom:4}}>URL du Worker</label>
+              <input style={inp} placeholder="https://mon-worker.mon-compte.workers.dev" value={settings.workerUrl||""} onChange={e=>onChange({...settings,workerUrl:e.target.value})}/>
+            </div>
+            <div style={{marginBottom:12}}>
+              <label style={{fontSize:11,color:C.muted,display:"block",marginBottom:4}}>Token secret (optionnel)</label>
               <div style={{position:"relative"}}>
-                <input type={showToken?"text":"password"} style={{...inp,paddingRight:60}} placeholder="github_pat_..." value={settings.gistToken||""} onChange={e=>onChange({...settings,gistToken:e.target.value})}/>
+                <input type={showToken?"text":"password"} style={{...inp,paddingRight:70}} placeholder="mon-token-secret" value={settings.workerToken||""} onChange={e=>onChange({...settings,workerToken:e.target.value})}/>
                 <button onClick={()=>setShowToken(!showToken)} style={{position:"absolute",right:6,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:C.accent,fontSize:11,cursor:"pointer",padding:"4px 8px"}}>{showToken?"Masquer":"Afficher"}</button>
               </div>
             </div>
-            <div style={{marginBottom:12}}>
-              <label style={{fontSize:11,color:C.muted,display:"block",marginBottom:4}}>Nom du fichier dans le gist</label>
-              <input style={inp} placeholder="voyage.json" value={settings.gistFilename||""} onChange={e=>onChange({...settings,gistFilename:e.target.value})}/>
-            </div>
-            <button onClick={publishToGist} disabled={!settings.gistId?.trim()||!settings.gistToken?.trim()} style={{width:"100%",padding:"12px",borderRadius:9,background:(settings.gistId?.trim()&&settings.gistToken?.trim())?C.accent:C.surface,border:`1px solid ${(settings.gistId?.trim()&&settings.gistToken?.trim())?C.accent:C.border2}`,color:(settings.gistId?.trim()&&settings.gistToken?.trim())?C.onAccent:C.muted,fontSize:14,fontWeight:600,cursor:(settings.gistId?.trim()&&settings.gistToken?.trim())?"pointer":"not-allowed",opacity:(settings.gistId?.trim()&&settings.gistToken?.trim())?1:0.7}}>📤 Publier maintenant</button>
+            <button onClick={publishToWorker} disabled={!workerReady}
+              style={{width:"100%",padding:"12px",borderRadius:9,background:workerReady?C.accent:C.surface,border:`1px solid ${workerReady?C.accent:C.border2}`,color:workerReady?C.onAccent:C.muted,fontSize:14,fontWeight:600,cursor:workerReady?"pointer":"not-allowed",opacity:workerReady?1:0.7}}>
+              📤 Publier maintenant
+            </button>
           </div>
 
-          <div style={section}>
-            <div style={sectionTitle}><span>🔗 Lien partagé (lecture)</span></div>
-            <div style={{fontSize:12,color:C.muted,marginBottom:10,lineHeight:1.5}}>Pour récupérer un planning publié par l'organisateur du voyage.</div>
-            <input style={inp} placeholder="https://gist.githubusercontent.com/..." value={settings.remoteUrl||""} onChange={e=>onChange({...settings,remoteUrl:e.target.value})}/>
-            <button onClick={()=>loadFromUrl(settings.remoteUrl)} disabled={!settings.remoteUrl?.trim()} style={{width:"100%",marginTop:10,padding:"10px",borderRadius:9,background:settings.remoteUrl?.trim()?`${C.accent}18`:C.surface2,border:`1px solid ${settings.remoteUrl?.trim()?C.accent:C.border2}`,color:settings.remoteUrl?.trim()?C.accent:C.muted,fontSize:13,fontWeight:600,cursor:settings.remoteUrl?.trim()?"pointer":"not-allowed",opacity:settings.remoteUrl?.trim()?1:0.7}}>🔄 Actualiser depuis le lien</button>
-          </div>
-
+          {/* ── 3. FICHIER LOCAL ── */}
           <div style={section}>
             <div style={sectionTitle}>
               <span>📁 Fichier local</span>
-              <button onClick={()=>setShowLocalHelp(true)} style={{background:"none",border:`1px solid ${C.accent}55`,borderRadius:"50%",width:22,height:22,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",color:C.accent,fontSize:12,fontWeight:700,padding:0}}>i</button>
+              <button style={iBtn} onClick={()=>setShowLocalHelp(true)}>i</button>
             </div>
             <div style={{display:"flex",gap:8}}>
               <button onClick={exportData} style={{flex:1,padding:"11px",borderRadius:9,background:C.surface,border:`1px solid ${C.border2}`,color:C.text,fontSize:13,fontWeight:500,cursor:"pointer"}}>📤 Exporter</button>
@@ -1004,6 +1010,7 @@
             <button onClick={copyJson} style={{width:"100%",marginTop:8,padding:"11px",borderRadius:9,background:C.surface,border:`1px solid ${C.border2}`,color:C.text,fontSize:13,fontWeight:500,cursor:"pointer"}}>📋 Copier le JSON</button>
           </div>
 
+          {/* ── 4. AFFICHAGE ── */}
           <div style={section}>
             <div style={sectionTitle}><span>🎨 Affichage</span></div>
             <div style={{marginBottom:16}}>
@@ -1026,6 +1033,7 @@
             </div>
           </div>
 
+          {/* ── AIDE MARKDOWN ── */}
           <div style={{padding:"10px 14px",borderRadius:10,background:`${C.accent}0c`,border:`1px solid ${C.accent}25`}}>
             <div style={{fontSize:11,fontWeight:700,color:C.accent,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>Aide markdown</div>
             <div style={{fontSize:12,color:C.muted,lineHeight:1.9}}>
@@ -1037,44 +1045,98 @@
             </div>
           </div>
         </div>
-        {showHelp && <HelpLinkModal onClose={()=>setShowHelp(false)} safeBot={safeBot}/>}
-        {showLocalHelp && <HelpLocalModal onClose={()=>setShowLocalHelp(false)} safeBot={safeBot}/>}
+        {showWorkerHelp && <HelpWorkerModal onClose={()=>setShowWorkerHelp(false)} safeBot={safeBot}/>}
+        {showLocalHelp  && <HelpLocalModal  onClose={()=>setShowLocalHelp(false)}  safeBot={safeBot}/>}
       </div>
     );
   }
 
-  /* ════════ HELP LINK MODAL ════════ */
-  function HelpLinkModal({onClose, safeBot}) {
+  /* ════════ HELP WORKER MODAL ════════ */
+  function HelpWorkerModal({onClose, safeBot}) {
     const h={fontFamily:C.serif,fontSize:15,fontWeight:600,color:C.accent,margin:"16px 0 8px"};
     const p={fontSize:13,color:C.text,lineHeight:1.65,marginBottom:8};
-    const code={background:C.surface2,padding:"2px 6px",borderRadius:4,fontFamily:"monospace",fontSize:12,color:C.accent,border:`1px solid ${C.border}`,wordBreak:"break-all"};
-    const step={fontSize:13,color:C.text,lineHeight:1.65,marginBottom:10,paddingLeft:22,position:"relative"};
-    const num={position:"absolute",left:0,top:0,width:16,height:16,borderRadius:"50%",background:C.accent,color:C.onAccent,fontSize:10,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center"};
+    const code={background:C.surface2,padding:"3px 7px",borderRadius:4,fontFamily:"monospace",fontSize:12,color:C.accent,border:`1px solid ${C.border}`,wordBreak:"break-all",display:"inline-block"};
+    const block={background:C.surface2,padding:"10px 12px",borderRadius:8,fontFamily:"monospace",fontSize:11,color:C.accent,border:`1px solid ${C.border}`,wordBreak:"break-all",marginBottom:10,lineHeight:1.8,overflowX:"auto",whiteSpace:"pre"};
+    const step=(n,children)=>(
+      <div style={{fontSize:13,color:C.text,lineHeight:1.65,marginBottom:10,paddingLeft:26,position:"relative"}}>
+        <div style={{position:"absolute",left:0,top:1,width:18,height:18,borderRadius:"50%",background:C.accent,color:C.onAccent,fontSize:10,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center"}}>{n}</div>
+        {children}
+      </div>
+    );
     return (
       <div onClick={e=>e.target===e.currentTarget&&onClose()} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:60,display:"flex",flexDirection:"column",justifyContent:"flex-end"}}>
         <div style={{background:C.surface,borderRadius:"20px 20px 0 0",border:`1px solid ${C.border}`,padding:`16px 20px calc(${safeBot} + 20px)`,maxHeight:"92svh",overflowY:"auto",touchAction:"pan-y",width:"100%",maxWidth:"var(--app-max-width)",margin:"0 auto"}}>
           <div style={{width:36,height:4,background:C.border,borderRadius:2,margin:"0 auto 20px"}}/>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-            <div style={{fontFamily:C.serif,fontSize:18,fontWeight:600,color:C.text}}>Publier sur Gist</div>
+            <div style={{fontFamily:C.serif,fontSize:18,fontWeight:600,color:C.text}}>Configuration Cloudflare</div>
             <button onClick={onClose} style={{background:"none",border:"none",color:C.muted,fontSize:22,cursor:"pointer"}}>✕</button>
           </div>
-          <div style={p}>Cette fonction permet de publier ton planning directement sur ton Gist GitHub en un tap.</div>
-          <div style={h}>🔐 Pourquoi un token ?</div>
-          <div style={p}>Pour écrire sur ton gist, l'app a besoin d'un jeton d'authentification GitHub. Ce token est stocké <strong>uniquement sur ton téléphone</strong>, jamais envoyé ailleurs que sur GitHub.</div>
-          <div style={h}>📝 Étape 1 — Créer le Gist (1 fois)</div>
-          <div style={step}><span style={num}>1</span>Va sur <span style={code}>gist.github.com</span></div>
-          <div style={step}><span style={num}>2</span>Nom du fichier : <span style={code}>voyage.json</span></div>
-          <div style={step}><span style={num}>3</span>Contenu : mets juste <span style={code}>{"{}"}</span></div>
-          <div style={step}><span style={num}>4</span>Clique sur <strong>"Create secret gist"</strong></div>
-          <div style={step}><span style={num}>5</span>Copie l'ID dans l'URL (ex: <span style={code}>abc123def456...</span>)</div>
-          <div style={h}>🔑 Étape 2 — Créer le Token (1 fois)</div>
-          <div style={step}><span style={num}>1</span>GitHub → avatar → <strong>Settings</strong></div>
-          <div style={step}><span style={num}>2</span><strong>Developer settings</strong> → <strong>Fine-grained tokens</strong> → <strong>Generate new token</strong></div>
-          <div style={step}><span style={num}>3</span><strong>Account permissions</strong> → <strong>Gists : Read and write</strong></div>
-          <div style={step}><span style={num}>4</span>Génère et copie le token (<span style={code}>github_pat_...</span>)</div>
-          <div style={h}>📲 URL à donner à ta famille</div>
-          <div style={{...code,display:"block",padding:"8px 10px",marginBottom:12}}>https://gist.githubusercontent.com/TON_USERNAME/TON_GIST_ID/raw/voyage.json</div>
-          <div style={p}>Envoie cette URL à ta famille — elle pointe toujours vers la dernière version.</div>
+
+          <div style={p}>Le Worker Cloudflare remplace GitHub Gist pour synchroniser ton planning. C'est gratuit et plus rapide.</div>
+
+          <div style={{padding:"10px 12px",borderRadius:8,background:`${C.accent2}10`,border:`1px solid ${C.accent2}30`,marginBottom:14}}>
+            <div style={{fontSize:12,color:C.accent2,fontWeight:600}}>⏱ Temps de mise en place : environ 15 minutes</div>
+          </div>
+
+          <div style={h}>① Créer un compte Cloudflare</div>
+          {step(1,<span>Va sur <code style={code}>cloudflare.com</code> → <strong>Sign up</strong> (gratuit, pas de carte bancaire requise)</span>)}
+
+          <div style={h}>② Créer le Worker et le stockage KV</div>
+          {step(1,<span>Dans le dashboard Cloudflare → menu gauche → <strong>Workers & Pages</strong> → <strong>Create</strong></span>)}
+          {step(2,<span>Choisis <strong>"Hello World"</strong> comme template, nomme-le <code style={code}>planning-voyage</code></span>)}
+          {step(3,<span>Clique <strong>Deploy</strong> — ton Worker est créé avec une URL comme <code style={code}>planning-voyage.TON-COMPTE.workers.dev</code></span>)}
+          {step(4,<span>Dans le dashboard → <strong>KV</strong> → <strong>Create a namespace</strong> → nomme-le <code style={code}>PLANNING_KV</code></span>)}
+          {step(5,<span>Retourne sur ton Worker → <strong>Settings</strong> → <strong>Bindings</strong> → <strong>Add binding</strong> → KV Namespace → Variable : <code style={code}>KV</code> → Namespace : <code style={code}>PLANNING_KV</code> → <strong>Save</strong></span>)}
+
+          <div style={h}>③ Coller le code du Worker</div>
+          {step(1,<span>Dans ton Worker → onglet <strong>Edit Code</strong> → remplace tout le contenu par ce code :</span>)}
+          <div style={block}>{`export default {
+  async fetch(request, env) {
+    const token = env.AUTH_TOKEN;
+    const url   = new URL(request.url);
+
+    // CORS — autorise l'app à appeler le Worker
+    const cors = {
+      "Access-Control-Allow-Origin":  "*",
+      "Access-Control-Allow-Methods": "GET, PUT, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, X-Auth-Token",
+    };
+    if (request.method === "OPTIONS")
+      return new Response(null, { headers: cors });
+
+    // GET /planning — lecture (sans token)
+    if (request.method === "GET" && url.pathname === "/planning") {
+      const data = await env.KV.get("planning");
+      if (!data) return new Response("{}", { headers: cors });
+      return new Response(data, {
+        headers: { ...cors, "Content-Type": "application/json" }
+      });
+    }
+
+    // PUT /planning — écriture (token requis)
+    if (request.method === "PUT" && url.pathname === "/planning") {
+      if (token && request.headers.get("X-Auth-Token") !== token)
+        return new Response("Unauthorized", { status: 401, headers: cors });
+      const body = await request.text();
+      await env.KV.put("planning", body);
+      return new Response("OK", { headers: cors });
+    }
+
+    return new Response("Not found", { status: 404, headers: cors });
+  }
+};`}</div>
+          {step(2,<span>Clique <strong>Deploy</strong></span>)}
+
+          <div style={h}>④ Ajouter un token secret (optionnel mais recommandé)</div>
+          {step(1,<span>Dans ton Worker → <strong>Settings</strong> → <strong>Variables</strong> → <strong>Add variable</strong></span>)}
+          {step(2,<span>Nom : <code style={code}>AUTH_TOKEN</code> · Valeur : un mot de passe de ton choix → <strong>Save</strong></span>)}
+          {step(3,<span>Note ce mot de passe — tu le mettras dans le champ "Token secret" ci-dessus</span>)}
+
+          <div style={h}>⑤ Configurer l'app</div>
+          {step(1,<span><strong>Synchroniser</strong> et <strong>URL du Worker</strong> : colle <code style={code}>https://planning-voyage.TON-COMPTE.workers.dev</code></span>)}
+          {step(2,<span><strong>Token secret</strong> : le mot de passe défini à l'étape ④</span>)}
+          {step(3,<span>Pour ta famille : donne-leur uniquement l'URL du Worker dans la section <strong>Synchroniser</strong> — pas besoin de token pour lire</span>)}
+
           <button onClick={onClose} style={{width:"100%",marginTop:16,padding:"12px",borderRadius:10,background:C.accent,border:"none",color:C.onAccent,fontSize:14,fontWeight:600,cursor:"pointer"}}>J'ai compris</button>
         </div>
       </div>
