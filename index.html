@@ -620,7 +620,7 @@
       <div class="meta">${tripLabel?escHtml(tripLabel)+" · ":""} ${activeDays.length} jours · Généré le ${new Date().toLocaleDateString("fr-FR")}</div>
       ${daysHtml?`<h2>📅 Programme</h2>${daysHtml}`:""}
       ${cardsHtml?`<h2>📋 Infos voyage</h2><div class="cards-grid">${cardsHtml}</div>`:""}
-      <div class="footer">Planning Voyage v2.1</div>
+      <div class="footer">Planning Voyage v2.2</div>
       </body></html>`;
 
       const blob = new Blob([html], {type:"text/html"});
@@ -801,7 +801,7 @@
           })()}
         </div>
 
-        <div style={{textAlign:"center",padding:"6px 0 0",fontSize:10,color:`${C.muted}88`,letterSpacing:0.5}}>v2.1</div>
+        <div style={{textAlign:"center",padding:"6px 0 0",fontSize:10,color:`${C.muted}88`,letterSpacing:0.5}}>v2.2</div>
 
         {/* Day detail — pushed screen */}
         {detailDayId&&(()=>{
