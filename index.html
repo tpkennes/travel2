@@ -62,19 +62,6 @@
        column instead of full-bleed, and the date column itself stays bare. */
     .day-row td:not(:first-child){border-bottom:1px solid var(--border)}
 
-    /* Dimmed state — when another card is open */
-    .day-row.dimmed{opacity:var(--dim-opacity)}
-
-    /* Expanded header row — top + right only (left already colored by inline bar) */
-    .day-row.expanded td{border-bottom:none;background:var(--surface) !important}
-    .day-row.expanded td{border-top:2px solid var(--row-color)}
-    .day-row.expanded td:last-child{border-right:2px solid var(--row-color)}
-
-    /* Expanded detail row — right + bottom only */
-    .day-detail td{padding:0;background:var(--surface) !important}
-    .day-detail td{border-bottom:2px solid var(--row-color)}
-    .day-detail td:last-child{border-right:2px solid var(--row-color)}
-
   </style>
 </head>
 <body>
@@ -99,7 +86,6 @@
       text:"#2c2418", muted:"#6e6455", danger:"#b83030",
       onAccent:"#ffffff", hover:"#f0ebe0",
       tableHead:"#ede8df", rowAlt:"#faf7f2",
-      detailBg:"#f7f3ec", dimOpacity:"0.35",
     },
     dark: {
       bg:"#0f0f0f", surface:"#1c1c1e", surface2:"#242426",
@@ -108,7 +94,6 @@
       text:"#ededed", muted:"#8e8e93", danger:"#ff6b6b",
       onAccent:"#0f0f0f", hover:"#252527",
       tableHead:"#1a1a1c", rowAlt:"#1f1f21",
-      detailBg:"#1a1a1c", dimOpacity:"0.45",
     },
   };
 
@@ -411,8 +396,8 @@
     const [, forceRerender]      = useState(0);
     const [tab,setTab]           = useState("days");
     const [syncing,setSyncing]   = useState(false);
-    const [expandedId,setExpanded]    = useState(null);
-    const [expandedCardId,setExpandedCard] = useState(null);
+    const [detailDayId,setDetailDayId]   = useState(null);
+    const [detailCardId,setDetailCardId] = useState(null);
     const [searchQuery,setSearchQuery]     = useState("");
     const [showSearch,setShowSearch]       = useState(false);
     const [confirm,setConfirm]             = useState(null); // {message, onConfirm}
@@ -541,8 +526,8 @@
       }
     };
 
-    const deleteDay  = id => { save({...data,days: data.days.filter(d=>d.id!==id)});  closeModal(); };
-    const deleteCard = id => { save({...data,cards:data.cards.filter(c=>c.id!==id)}); closeModal(); };
+    const deleteDay  = id => { save({...data,days: data.days.filter(d=>d.id!==id)});  closeModal(); setDetailDayId(cur=>cur===id?null:cur); };
+    const deleteCard = id => { save({...data,cards:data.cards.filter(c=>c.id!==id)}); closeModal(); setDetailCardId(cur=>cur===id?null:cur); };
     const moveDay    = (id,dir) => { const a=[...data.days];  const i=a.findIndex(d=>d.id===id); const ni=i+dir; if(ni<0||ni>=a.length)return; [a[i],a[ni]]=[a[ni],a[i]]; save({...data,days:a}); };
     const moveCard   = (id,dir) => { const a=[...data.cards]; const i=a.findIndex(c=>c.id===id); const ni=i+dir; if(ni<0||ni>=a.length)return; [a[i],a[ni]]=[a[ni],a[i]]; save({...data,cards:a}); };
 
@@ -554,7 +539,7 @@
     const toggleArchiveDay  = id => save({...data,days: data.days.map(d=>d.id===id?{...d,archived:!d.archived}:d)});
     const toggleArchiveCard = id => save({...data,cards:data.cards.map(c=>c.id===id?{...c,archived:!c.archived}:c)});
 
-    const startSwap = id => { setSwapFor(id); setExpanded(null); };
+    const startSwap = id => { setSwapFor(id); setDetailDayId(null); };
     const doSwap = targetId => {
       const src=data.days.find(d=>d.id===swapFor); const tgt=data.days.find(d=>d.id===targetId);
       if(!src || !tgt){ setSwapFor(null); return; }
@@ -730,20 +715,14 @@
             );
             return (
               <div>
-                <table className="day-table" style={{"--bg":C.bg,"--border":C.border,"--border2":C.border2,"--hover":C.hover,"--surface":C.surface,"--accent":C.accent,"--dim-opacity":C.dimOpacity}}>
+                <table className="day-table" style={{"--bg":C.bg,"--border":C.border,"--border2":C.border2,"--hover":C.hover}}>
                   <tbody>
                     {activeDays.map((day,i)=>(
-                      <DayRow key={day.id} day={day} index={data.days.indexOf(day)} total={data.days.length}
-                        expanded={expandedId===day.id}
-                        dimmed={!!expandedId&&expandedId!==day.id}
+                      <DayRow key={day.id} day={day}
                         swapMode={!!swapFor} isSwapSource={swapFor===day.id}
                         rowIndex={i}
                         settings={settings}
-                        onToggle={()=>{if(swapFor&&swapFor!==day.id){doSwap(day.id);}else{setExpanded(expandedId===day.id?null:day.id);}}}
-                        onEdit={()=>openModal("day",day)}
-                        onMove={dir=>moveDay(day.id,dir)}
-                        onSwap={()=>startSwap(day.id)}
-                        onArchive={()=>toggleArchiveDay(day.id)}/>
+                        onToggle={()=>{if(swapFor&&swapFor!==day.id){doSwap(day.id);}else{setDetailDayId(day.id);}}}/>
                     ))}
                   </tbody>
                 </table>
@@ -756,13 +735,12 @@
                   </div>
                 )}
                 {showArchivedDays&&archivedDays.length>0&&(
-                  <table className="day-table" style={{marginTop:8,opacity:0.65,"--bg":C.bg,"--border":C.border,"--border2":C.border2,"--hover":C.hover,"--surface":C.surface,"--accent":C.accent}}>
+                  <table className="day-table" style={{marginTop:8,opacity:0.65,"--bg":C.bg,"--border":C.border,"--border2":C.border2,"--hover":C.hover}}>
                     <tbody>
                       {archivedDays.map((day,i)=>(
-                        <DayRow key={day.id} day={day} index={data.days.indexOf(day)} total={data.days.length}
-                          expanded={expandedId===day.id} swapMode={!!swapFor} isSwapSource={swapFor===day.id} rowIndex={i} settings={settings}
-                          onToggle={()=>setExpanded(expandedId===day.id?null:day.id)}
-                          onEdit={()=>openModal("day",day)} onMove={dir=>moveDay(day.id,dir)} onSwap={()=>startSwap(day.id)} onArchive={()=>toggleArchiveDay(day.id)}/>
+                        <DayRow key={day.id} day={day}
+                          swapMode={!!swapFor} isSwapSource={swapFor===day.id} rowIndex={i} settings={settings}
+                          onToggle={()=>setDetailDayId(day.id)}/>
                       ))}
                     </tbody>
                   </table>
@@ -791,18 +769,12 @@
             );
             return (
               <div>
-                <table className="day-table" style={{"--bg":C.bg,"--border":C.border,"--border2":C.border2,"--hover":C.hover,"--surface":C.surface,"--accent":C.accent2,"--dim-opacity":C.dimOpacity}}>
+                <table className="day-table" style={{"--bg":C.bg,"--border":C.border,"--border2":C.border2,"--hover":C.hover}}>
                   <tbody>
                     {activeCards.map((card,i)=>(
-                      <InfoCard key={card.id} card={card} index={data.cards.indexOf(card)} total={data.cards.length}
+                      <InfoCard key={card.id} card={card}
                         rowIndex={i}
-                        open={expandedCardId===card.id}
-                        onToggle={()=>setExpandedCard(expandedCardId===card.id?null:card.id)}
-                        dimmed={!!expandedCardId&&expandedCardId!==card.id}
-                        onEdit={()=>openModal("card",card)}
-                        onMove={dir=>moveCard(card.id,dir)}
-                        onToggleTodo={(todoId)=>toggleTodo(card.id,todoId)}
-                        onArchive={()=>toggleArchiveCard(card.id)}/>
+                        onToggle={()=>setDetailCardId(card.id)}/>
                     ))}
                   </tbody>
                 </table>
@@ -817,10 +789,9 @@
                   <table className="day-table" style={{marginTop:8,opacity:0.65}}>
                     <tbody>
                       {archivedCards.map((card,i)=>(
-                        <InfoCard key={card.id} card={card} index={data.cards.indexOf(card)} total={data.cards.length}
+                        <InfoCard key={card.id} card={card}
                           rowIndex={i}
-                          onEdit={()=>openModal("card",card)} onMove={dir=>moveCard(card.id,dir)}
-                          onToggleTodo={(todoId)=>toggleTodo(card.id,todoId)} onArchive={()=>toggleArchiveCard(card.id)}/>
+                          onToggle={()=>setDetailCardId(card.id)}/>
                       ))}
                     </tbody>
                   </table>
@@ -831,6 +802,34 @@
         </div>
 
         <div style={{textAlign:"center",padding:"6px 0 0",fontSize:10,color:`${C.muted}88`,letterSpacing:0.5}}>v2.1</div>
+
+        {/* Day detail — pushed screen */}
+        {detailDayId&&(()=>{
+          const day = data.days.find(d=>d.id===detailDayId);
+          if(!day) return null;
+          return (
+            <DayDetailView day={day} index={data.days.indexOf(day)} total={data.days.length} settings={settings}
+              onClose={()=>setDetailDayId(null)}
+              onEdit={()=>openModal("day",day)}
+              onSwap={()=>startSwap(day.id)}
+              onArchive={()=>toggleArchiveDay(day.id)}
+              onMove={dir=>moveDay(day.id,dir)}/>
+          );
+        })()}
+
+        {/* Card detail — pushed screen */}
+        {detailCardId&&(()=>{
+          const card = data.cards.find(c=>c.id===detailCardId);
+          if(!card) return null;
+          return (
+            <CardDetailView card={card} index={data.cards.indexOf(card)} total={data.cards.length}
+              onClose={()=>setDetailCardId(null)}
+              onEdit={()=>openModal("card",card)}
+              onArchive={()=>toggleArchiveCard(card.id)}
+              onMove={dir=>moveCard(card.id,dir)}
+              onToggleTodo={todoId=>toggleTodo(card.id,todoId)}/>
+          );
+        })()}
 
         {/* Confirm dialog */}
         {confirm&&(
@@ -864,7 +863,7 @@
   }
 
   /* ════════ DAY ROW (table row) ════════ */
-  function DayRow({day,index,total,expanded,dimmed,swapMode,isSwapSource,rowIndex,settings,onToggle,onEdit,onMove,onSwap,onArchive}) {
+  function DayRow({day,swapMode,isSwapSource,rowIndex,settings,onToggle}) {
     const isArchived = !!day.archived;
     const hasPlan   = !!(day.planning||"").trim();
     const hasNotes  = !!(day.notes||"").trim();
@@ -892,96 +891,50 @@
     const dayMon   = fmtMon(day.date);
 
     return (
-      <>
-        {/* Main row */}
-        <tr className={`day-row${expanded?" expanded":""}${dimmed?" dimmed":""}`}
-          onClick={onToggle}
-          style={{background:rowBg,cursor:"pointer",transition:"background 0.1s,opacity 0.2s",opacity:isArchived&&!expanded?0.55:1,"--row-color":badgeHex||C.accent}}>
+      <tr className="day-row"
+        onClick={onToggle}
+        style={{background:rowBg,cursor:"pointer",transition:"background 0.1s,opacity 0.2s",opacity:isArchived?0.55:1}}>
 
-          {/* Date cell */}
-          <td style={{width:52,borderLeft,padding:"10px 0",textAlign:"center",verticalAlign:"middle",userSelect:"none"}}>
-            <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:0}}>
-              <div style={{fontSize:9,fontWeight:700,color:badgeHex||C.muted,letterSpacing:0.5,textTransform:"uppercase",lineHeight:1}}>{dayShort}</div>
-              <div style={{fontFamily:C.serif,fontWeight:600,fontSize:22,lineHeight:1.1,color:badgeHex||C.accent}}>{dayNum}</div>
-              <div style={{fontSize:9,color:badgeHex||C.muted,lineHeight:1}}>{dayMon}</div>
+        {/* Date cell */}
+        <td style={{width:52,borderLeft,padding:"10px 0",textAlign:"center",verticalAlign:"middle",userSelect:"none"}}>
+          <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:0}}>
+            <div style={{fontSize:9,fontWeight:700,color:badgeHex||C.muted,letterSpacing:0.5,textTransform:"uppercase",lineHeight:1}}>{dayShort}</div>
+            <div style={{fontFamily:C.serif,fontWeight:600,fontSize:22,lineHeight:1.1,color:badgeHex||C.accent}}>{dayNum}</div>
+            <div style={{fontSize:9,color:badgeHex||C.muted,lineHeight:1}}>{dayMon}</div>
+          </div>
+        </td>
+
+        {/* Content preview cell */}
+        <td style={{padding:"10px 10px 10px 8px",minWidth:0,verticalAlign:"middle"}}>
+          {isArchived?(
+            <span style={{fontSize:11,color:C.muted,fontStyle:"italic"}}>📦 Archivé — {fmtShort(day.date)}</span>
+          ):swapTarget?(
+            <span style={{fontSize:12,color:C.accent2,fontStyle:"italic"}}>Toucher pour échanger le contenu</span>
+          ):isSwapSource?(
+            <span style={{fontSize:12,color:C.accent,fontWeight:600}}>↔ Jour sélectionné pour l'échange</span>
+          ):hasPlan?(
+            <div style={{overflow:"hidden"}}>{renderBlock(previewContent, settings.fontSize, false)}</div>
+          ):(
+            <span style={{fontSize:settings.fontSize-1,color:C.muted,fontStyle:"italic"}}>Journée vide — toucher pour remplir</span>
+          )}
+        </td>
+
+        {/* Indicators + chevron */}
+        <td style={{width:36,padding:"10px 6px",textAlign:"center",verticalAlign:"middle"}}>
+          <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:3}}>
+            <div style={{display:"flex",gap:4,justifyContent:"center"}}>
+              {hasPlan &&!isArchived&&<div style={{width:6,height:6,borderRadius:"50%",background:C.accent}}/>}
+              {hasNotes&&!isArchived&&<div style={{width:6,height:6,borderRadius:"50%",background:C.accent2}}/>}
             </div>
-          </td>
-
-          {/* Content preview cell */}
-          <td style={{padding:"10px 10px 10px 8px",minWidth:0,verticalAlign:"middle"}}>
-            {isArchived?(
-              <span style={{fontSize:11,color:C.muted,fontStyle:"italic"}}>📦 Archivé — {fmtShort(day.date)}</span>
-            ):swapTarget?(
-              <span style={{fontSize:12,color:C.accent2,fontStyle:"italic"}}>Toucher pour échanger le contenu</span>
-            ):isSwapSource?(
-              <span style={{fontSize:12,color:C.accent,fontWeight:600}}>↔ Jour sélectionné pour l'échange</span>
-            ):!expanded&&hasPlan?(
-              <div style={{overflow:"hidden"}}>{renderBlock(previewContent, settings.fontSize, false)}</div>
-            ):!expanded?(
-              <span style={{fontSize:settings.fontSize-1,color:C.muted,fontStyle:"italic"}}>Journée vide — toucher pour remplir</span>
-            ):(
-              <div style={{fontSize:11,color:C.muted,textTransform:"capitalize"}}>{fmtLong(day.date)}</div>
-            )}
-          </td>
-
-          {/* Indicators + chevron */}
-          <td style={{width:36,padding:"10px 6px",textAlign:"center",verticalAlign:"middle"}}>
-            <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:3}}>
-              <div style={{display:"flex",gap:4,justifyContent:"center"}}>
-                {hasPlan &&!isArchived&&<div style={{width:6,height:6,borderRadius:"50%",background:C.accent}}/>}
-                {hasNotes&&!isArchived&&<div style={{width:6,height:6,borderRadius:"50%",background:C.accent2}}/>}
-              </div>
-              <div style={{color:C.muted,fontSize:14,lineHeight:1,transform:expanded?"rotate(90deg)":"rotate(0deg)",transition:"transform 0.2s ease"}}>›</div>
-            </div>
-          </td>
-        </tr>
-
-        {/* Expanded detail row */}
-        {expanded&&!swapMode&&(
-          <>
-          <tr className="day-detail" style={{"--row-color":badgeHex||C.accent}}>
-            <td colSpan={3} style={{padding:0}}>
-              <div style={{background:C.detailBg,borderLeft,padding:"14px 16px 14px 14px"}}>
-
-                {/* Planning section */}
-                {hasPlan?(
-                  <div style={{marginBottom:hasNotes?14:0}}>
-                    <div style={{fontSize:10,textTransform:"uppercase",letterSpacing:1.2,color:C.accent,marginBottom:8,fontWeight:700}}>📅 Programme</div>
-                    {renderBlock(day.planning, settings.fontSize, false)}
-                  </div>
-                ):(
-                  <div style={{fontSize:13,color:C.muted,fontStyle:"italic",marginBottom:hasNotes?14:0}}>Aucun programme saisi</div>
-                )}
-
-                {/* Notes section */}
-                {hasNotes&&(
-                  <div style={{padding:"10px 12px",background:`${C.accent2}0c`,borderRadius:10,border:`1px solid ${C.accent2}28`,marginBottom:12}}>
-                    <div style={{fontSize:10,textTransform:"uppercase",letterSpacing:1.2,color:C.accent2,marginBottom:8,fontWeight:700}}>📌 Infos pratiques</div>
-                    {renderBlock(day.notes, settings.fontSize, true)}
-                  </div>
-                )}
-
-                {/* Action buttons */}
-                <div style={{display:"flex",gap:7,flexWrap:"wrap",marginTop:hasPlan||hasNotes?8:0}}>
-                  <button onClick={e=>{e.stopPropagation();onEdit();}} style={{flex:"1 1 auto",minWidth:80,padding:"8px 0",borderRadius:8,background:`${C.accent}12`,border:`1px solid ${C.accent}30`,color:C.accent,fontSize:12,cursor:"pointer",fontWeight:600}}>✏️ Modifier</button>
-                  <button onClick={e=>{e.stopPropagation();onSwap();}} style={{flex:"1 1 auto",minWidth:80,padding:"8px 0",borderRadius:8,background:`${C.accent2}12`,border:`1px solid ${C.accent2}30`,color:C.accent2,fontSize:12,cursor:"pointer",fontWeight:600}}>↔ Échanger</button>
-                  <button onClick={e=>{e.stopPropagation();onArchive();}} style={{flex:"1 1 auto",minWidth:80,padding:"8px 0",borderRadius:8,background:`${C.muted}12`,border:`1px solid ${C.muted}30`,color:C.muted,fontSize:12,cursor:"pointer",fontWeight:600}}>{isArchived?"↩ Désarchiver":"📦 Archiver"}</button>
-                  <button onClick={e=>{e.stopPropagation();onMove(-1);}} disabled={index===0} style={{width:34,padding:"8px 0",borderRadius:8,background:C.surface,border:`1px solid ${C.border}`,color:index===0?C.border:C.muted,fontSize:13,cursor:index===0?"default":"pointer"}}>↑</button>
-                  <button onClick={e=>{e.stopPropagation();onMove(1);}} disabled={index===total-1} style={{width:34,padding:"8px 0",borderRadius:8,background:C.surface,border:`1px solid ${C.border}`,color:index===total-1?C.border:C.muted,fontSize:13,cursor:index===total-1?"default":"pointer"}}>↓</button>
-                </div>
-              </div>
-            </td>
-          </tr>
-          {/* Spacer row — visible bottom edge of the "lifted card" */}
-          <tr><td colSpan={3} style={{padding:0,height:6,background:C.bg,borderBottom:`2px solid ${C.border2}`}}/></tr>
-          </>
-        )}
-      </>
+            <div style={{color:C.muted,fontSize:14,lineHeight:1}}>›</div>
+          </div>
+        </td>
+      </tr>
     );
   }
 
   /* ════════ INFO CARD (table row, same style as DayRow) ════════ */
-  function InfoCard({card,index,total,rowIndex,open,onToggle,dimmed,onEdit,onMove,onToggleTodo,onArchive}) {
+  function InfoCard({card,rowIndex,onToggle}) {
     const isArchived = !!card.archived;
     const isTodo = card.kind==="todo";
     const badgeHex = card.color?BADGE_COLORS.find(c=>c.id===card.color)?.hex:null;
@@ -1001,85 +954,163 @@
     const iconBg    = badgeHex?badgeHex:`${C.accent2}15`;
 
     return (
-      <>
-        <tr className={`day-row${open?" expanded":""}${dimmed?" dimmed":""}`}
-          onClick={onToggle}
-          style={{background:rowBg,cursor:"pointer",transition:"background 0.1s,opacity 0.2s",opacity:isArchived&&!open?0.55:1,"--row-color":badgeHex||C.accent2}}>
+      <tr className="day-row"
+        onClick={onToggle}
+        style={{background:rowBg,cursor:"pointer",transition:"background 0.1s,opacity 0.2s",opacity:isArchived?0.55:1}}>
 
-          {/* Icon cell (mirrors date cell) */}
-          <td style={{width:52,borderLeft,padding:"10px 0",textAlign:"center",verticalAlign:"middle",userSelect:"none"}}>
-            <div style={{width:32,height:32,borderRadius:8,background:iconBg,border:badgeHex?"none":`1px solid ${C.accent2}28`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,color:iconColor,margin:"0 auto"}}>
-              {isTodo?"☑":"📋"}
-            </div>
-          </td>
+        {/* Icon cell (mirrors date cell) */}
+        <td style={{width:52,borderLeft,padding:"10px 0",textAlign:"center",verticalAlign:"middle",userSelect:"none"}}>
+          <div style={{width:32,height:32,borderRadius:8,background:iconBg,border:badgeHex?"none":`1px solid ${C.accent2}28`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,color:iconColor,margin:"0 auto"}}>
+            {isTodo?"☑":"📋"}
+          </div>
+        </td>
 
-          {/* Title + preview cell */}
-          <td style={{padding:"10px 10px 10px 8px",minWidth:0,verticalAlign:"middle"}}>
-            {isArchived?(
-              <span style={{fontSize:11,color:C.muted,fontStyle:"italic"}}>📦 Archivé — {card.title||"Sans titre"}</span>
-            ):(
-              <>
-                <div style={{fontWeight:600,fontSize:13,color:C.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{card.title||"Sans titre"}</div>
-                {!open&&(
-                  <>
-                    <div style={{fontSize:11,color:C.muted,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{preview}</div>
-                    {isTodo&&totalCount>0&&(
-                      <div style={{marginTop:5,height:3,borderRadius:2,background:C.border,overflow:"hidden"}}>
-                        <div style={{height:"100%",width:`${progress*100}%`,background:doneCount===totalCount?C.accent2:C.accent,borderRadius:2,transition:"width 0.3s"}}/>
-                      </div>
-                    )}
-                  </>
-                )}
-              </>
-            )}
-          </td>
-
-          {/* Chevron cell */}
-          <td style={{width:36,padding:"10px 6px",textAlign:"center",verticalAlign:"middle"}}>
-            <div style={{color:C.muted,fontSize:14,lineHeight:1,transform:open?"rotate(90deg)":"rotate(0deg)",transition:"transform 0.2s ease"}}>›</div>
-          </td>
-        </tr>
-
-        {/* Expanded detail row */}
-        {open&&(
-          <>
-          <tr className="day-detail" style={{"--row-color":badgeHex||C.accent2}}>
-            <td colSpan={3} style={{padding:0}}>
-              <div style={{background:C.detailBg,borderLeft,padding:"14px 16px 14px 14px"}}>
-                {isTodo?(
-                  <div style={{marginBottom:12}}>
-                    {todosList.map(todo=>(
-                      <div key={todo.id} onClick={e=>{e.stopPropagation();onToggleTodo(todo.id);}} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:`1px solid ${C.border}`,cursor:"pointer"}}>
-                        <div style={{width:20,height:20,borderRadius:5,border:`2px solid ${todo.done?C.accent2:C.border2}`,background:todo.done?C.accent2:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,transition:"all 0.15s"}}>
-                          {todo.done&&<span style={{color:C.onAccent,fontSize:12,fontWeight:700}}>✓</span>}
-                        </div>
-                        <div style={{fontSize:14,color:todo.done?C.muted:C.text,textDecoration:todo.done?"line-through":"none",lineHeight:1.5,flex:1}}>{renderInline(todo.text,todo.done?C.muted:C.text)}</div>
-                      </div>
-                    ))}
-                    {totalCount===0&&<div style={{fontSize:13,color:C.muted,fontStyle:"italic"}}>Aucun item — modifie pour en ajouter</div>}
-                    {totalCount>0&&(
-                      <div style={{marginTop:8,height:4,borderRadius:2,background:C.border,overflow:"hidden"}}>
-                        <div style={{height:"100%",width:`${progress*100}%`,background:doneCount===totalCount?C.accent2:C.accent,borderRadius:2,transition:"width 0.3s"}}/>
-                      </div>
-                    )}
-                  </div>
-                ):(
-                  <div style={{marginBottom:12}}>{renderBlock(card.content,14,true)}</div>
-                )}
-                <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
-                  <button onClick={e=>{e.stopPropagation();onEdit();}} style={{flex:"1 1 auto",minWidth:80,padding:"8px 0",borderRadius:8,background:`${C.accent2}12`,border:`1px solid ${C.accent2}30`,color:C.accent2,fontSize:12,cursor:"pointer",fontWeight:600}}>✏️ Modifier</button>
-                  <button onClick={e=>{e.stopPropagation();onArchive();}} style={{flex:"1 1 auto",minWidth:80,padding:"8px 0",borderRadius:8,background:`${C.muted}12`,border:`1px solid ${C.muted}30`,color:C.muted,fontSize:12,cursor:"pointer",fontWeight:600}}>{isArchived?"↩ Désarchiver":"📦 Archiver"}</button>
-                  <button onClick={e=>{e.stopPropagation();onMove(-1);}} disabled={index===0} style={{width:34,padding:"8px 0",borderRadius:8,background:C.surface,border:`1px solid ${C.border}`,color:index===0?C.border:C.muted,fontSize:13,cursor:index===0?"default":"pointer"}}>↑</button>
-                  <button onClick={e=>{e.stopPropagation();onMove(1);}} disabled={index===total-1} style={{width:34,padding:"8px 0",borderRadius:8,background:C.surface,border:`1px solid ${C.border}`,color:index===total-1?C.border:C.muted,fontSize:13,cursor:index===total-1?"default":"pointer"}}>↓</button>
+        {/* Title + preview cell */}
+        <td style={{padding:"10px 10px 10px 8px",minWidth:0,verticalAlign:"middle"}}>
+          {isArchived?(
+            <span style={{fontSize:11,color:C.muted,fontStyle:"italic"}}>📦 Archivé — {card.title||"Sans titre"}</span>
+          ):(
+            <>
+              <div style={{fontWeight:600,fontSize:13,color:C.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{card.title||"Sans titre"}</div>
+              <div style={{fontSize:11,color:C.muted,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{preview}</div>
+              {isTodo&&totalCount>0&&(
+                <div style={{marginTop:5,height:3,borderRadius:2,background:C.border,overflow:"hidden"}}>
+                  <div style={{height:"100%",width:`${progress*100}%`,background:doneCount===totalCount?C.accent2:C.accent,borderRadius:2,transition:"width 0.3s"}}/>
                 </div>
+              )}
+            </>
+          )}
+        </td>
+
+        {/* Chevron cell */}
+        <td style={{width:36,padding:"10px 6px",textAlign:"center",verticalAlign:"middle"}}>
+          <div style={{color:C.muted,fontSize:14,lineHeight:1}}>›</div>
+        </td>
+      </tr>
+    );
+  }
+
+  /* ════════ PUSH PANEL — full-screen detail, slides in from the right
+     like an iOS UINavigationController push, instead of the accordion
+     row expansion this replaced. ════════ */
+  function PushPanel({onClose, accentColor, title, children}) {
+    const [entered,setEntered] = useState(false);
+    const [closing,setClosing] = useState(false);
+    useEffect(() => {
+      const id = requestAnimationFrame(()=>setEntered(true));
+      return () => cancelAnimationFrame(id);
+    }, []);
+    // Slide back out, then only clear the parent's state once the exit
+    // animation has actually finished — otherwise the panel would vanish
+    // instantly instead of feeling like a real "pop".
+    const close = after => {
+      setClosing(true);
+      setTimeout(() => { onClose(); if(after) after(); }, 320);
+    };
+    const safeTop = "max(20px, env(safe-area-inset-top))";
+    const safeBot = "max(20px, env(safe-area-inset-bottom))";
+    return (
+      <div style={{position:"fixed",inset:0,zIndex:40,background:C.bg,display:"flex",flexDirection:"column",
+        transform:(entered&&!closing)?"translateX(0)":"translateX(100%)",
+        transition:"transform 0.32s cubic-bezier(0.32,0.72,0,1)"}}>
+        <div style={{paddingTop:safeTop,background:C.bg,borderBottom:`1px solid ${C.border}`,flexShrink:0}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,padding:"8px 16px 8px 6px"}}>
+            <button onClick={()=>close()} style={{background:"none",border:"none",color:accentColor||C.accent,fontSize:16,fontWeight:600,cursor:"pointer",padding:"8px 6px",display:"flex",alignItems:"center",flexShrink:0}}>‹ Retour</button>
+            <div style={{fontFamily:C.serif,fontSize:15,fontWeight:600,color:C.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",textTransform:"capitalize"}}>{title}</div>
+          </div>
+        </div>
+        <div style={{flex:1,overflowY:"auto",padding:16,paddingBottom:`calc(24px + ${safeBot})`}}>
+          {children(close)}
+        </div>
+      </div>
+    );
+  }
+
+  /* ════════ DAY DETAIL VIEW ════════ */
+  function DayDetailView({day, index, total, settings, onClose, onEdit, onSwap, onArchive, onMove}) {
+    const isArchived = !!day.archived;
+    const hasPlan  = !!(day.planning||"").trim();
+    const hasNotes = !!(day.notes||"").trim();
+    const badgeHex = day.color?BADGE_COLORS.find(c=>c.id===day.color)?.hex:null;
+    const btn = {flex:"1 1 auto",minWidth:80,padding:"10px 0",borderRadius:8,fontSize:13,cursor:"pointer",fontWeight:600};
+    const moveBtn = disabled => ({width:38,padding:"10px 0",borderRadius:8,background:C.surface,border:`1px solid ${C.border}`,color:disabled?C.border:C.muted,fontSize:14,cursor:disabled?"default":"pointer"});
+    return (
+      <PushPanel onClose={onClose} accentColor={badgeHex||C.accent} title={fmtLong(day.date)}>
+        {(close) => (
+          <>
+            {hasPlan?(
+              <div style={{marginBottom:hasNotes?14:0}}>
+                <div style={{fontSize:10,textTransform:"uppercase",letterSpacing:1.2,color:badgeHex||C.accent,marginBottom:8,fontWeight:700}}>📅 Programme</div>
+                {renderBlock(day.planning, settings.fontSize, false)}
               </div>
-            </td>
-          </tr>
-          {/* Spacer row — bottom edge of the "lifted card" */}
-          <tr><td colSpan={3} style={{padding:0,height:6,background:C.bg,borderBottom:`2px solid ${C.border2}`}}/></tr>
+            ):(
+              <div style={{fontSize:13,color:C.muted,fontStyle:"italic",marginBottom:hasNotes?14:0}}>Aucun programme saisi</div>
+            )}
+
+            {hasNotes&&(
+              <div style={{padding:"10px 12px",background:`${C.accent2}0c`,borderRadius:10,border:`1px solid ${C.accent2}28`,marginBottom:16}}>
+                <div style={{fontSize:10,textTransform:"uppercase",letterSpacing:1.2,color:C.accent2,marginBottom:8,fontWeight:700}}>📌 Infos pratiques</div>
+                {renderBlock(day.notes, settings.fontSize, true)}
+              </div>
+            )}
+
+            <div style={{display:"flex",gap:7,flexWrap:"wrap",marginTop:hasPlan||hasNotes?8:0}}>
+              <button onClick={onEdit} style={{...btn,background:`${C.accent}12`,border:`1px solid ${C.accent}30`,color:C.accent}}>✏️ Modifier</button>
+              <button onClick={()=>close(onSwap)} style={{...btn,background:`${C.accent2}12`,border:`1px solid ${C.accent2}30`,color:C.accent2}}>↔ Échanger</button>
+              <button onClick={onArchive} style={{...btn,background:`${C.muted}12`,border:`1px solid ${C.muted}30`,color:C.muted}}>{isArchived?"↩ Désarchiver":"📦 Archiver"}</button>
+              <button onClick={()=>onMove(-1)} disabled={index===0} style={moveBtn(index===0)}>↑</button>
+              <button onClick={()=>onMove(1)} disabled={index===total-1} style={moveBtn(index===total-1)}>↓</button>
+            </div>
           </>
         )}
-      </>
+      </PushPanel>
+    );
+  }
+
+  /* ════════ CARD DETAIL VIEW ════════ */
+  function CardDetailView({card, index, total, onClose, onEdit, onArchive, onMove, onToggleTodo}) {
+    const isArchived = !!card.archived;
+    const isTodo = card.kind==="todo";
+    const badgeHex = card.color?BADGE_COLORS.find(c=>c.id===card.color)?.hex:null;
+    const todosList  = isTodo?(card.todos||[]):[];
+    const doneCount  = todosList.filter(t=>t.done).length;
+    const totalCount = todosList.length;
+    const progress   = totalCount>0?doneCount/totalCount:0;
+    const btn = {flex:"1 1 auto",minWidth:80,padding:"10px 0",borderRadius:8,fontSize:13,cursor:"pointer",fontWeight:600};
+    const moveBtn = disabled => ({width:38,padding:"10px 0",borderRadius:8,background:C.surface,border:`1px solid ${C.border}`,color:disabled?C.border:C.muted,fontSize:14,cursor:disabled?"default":"pointer"});
+    return (
+      <PushPanel onClose={onClose} accentColor={badgeHex||C.accent2} title={card.title||"Sans titre"}>
+        {() => (
+          <>
+            {isTodo?(
+              <div style={{marginBottom:16}}>
+                {todosList.map(todo=>(
+                  <div key={todo.id} onClick={()=>onToggleTodo(todo.id)} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 0",borderBottom:`1px solid ${C.border}`,cursor:"pointer"}}>
+                    <div style={{width:20,height:20,borderRadius:5,border:`2px solid ${todo.done?C.accent2:C.border2}`,background:todo.done?C.accent2:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,transition:"all 0.15s"}}>
+                      {todo.done&&<span style={{color:C.onAccent,fontSize:12,fontWeight:700}}>✓</span>}
+                    </div>
+                    <div style={{fontSize:14,color:todo.done?C.muted:C.text,textDecoration:todo.done?"line-through":"none",lineHeight:1.5,flex:1}}>{renderInline(todo.text,todo.done?C.muted:C.text)}</div>
+                  </div>
+                ))}
+                {totalCount===0&&<div style={{fontSize:13,color:C.muted,fontStyle:"italic"}}>Aucun item — modifie pour en ajouter</div>}
+                {totalCount>0&&(
+                  <div style={{marginTop:8,height:4,borderRadius:2,background:C.border,overflow:"hidden"}}>
+                    <div style={{height:"100%",width:`${progress*100}%`,background:doneCount===totalCount?C.accent2:C.accent,borderRadius:2,transition:"width 0.3s"}}/>
+                  </div>
+                )}
+              </div>
+            ):(
+              <div style={{marginBottom:16}}>{renderBlock(card.content,14,true)}</div>
+            )}
+            <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
+              <button onClick={onEdit} style={{...btn,background:`${C.accent2}12`,border:`1px solid ${C.accent2}30`,color:C.accent2}}>✏️ Modifier</button>
+              <button onClick={onArchive} style={{...btn,background:`${C.muted}12`,border:`1px solid ${C.muted}30`,color:C.muted}}>{isArchived?"↩ Désarchiver":"📦 Archiver"}</button>
+              <button onClick={()=>onMove(-1)} disabled={index===0} style={moveBtn(index===0)}>↑</button>
+              <button onClick={()=>onMove(1)} disabled={index===total-1} style={moveBtn(index===total-1)}>↓</button>
+            </div>
+          </>
+        )}
+      </PushPanel>
     );
   }
 
