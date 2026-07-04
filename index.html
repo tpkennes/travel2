@@ -20,8 +20,31 @@
     ::-webkit-scrollbar{display:none}
     input,textarea,button,label{font-family:inherit}
     input,textarea,select{font-size:16px}
+
+    /* Tap feedback — buttons only get :hover from the browser by default,
+       which never fires on touch. Give every button a brief press-down
+       scale/dim so taps feel acknowledged, like native iOS controls. */
+    button{transition:transform 0.08s ease,opacity 0.08s ease}
+    button:active{transform:scale(0.96);opacity:0.8}
+    /* Same press feedback for non-<button> tappable elements (color swatches,
+       the trip name header) that can't rely on the rule above. */
+    .tap-scale{transition:transform 0.08s ease}
+    .tap-scale:active{transform:scale(0.92)}
+
+    /* Bottom sheets (EditModal, SettingsPanel, help modals) — slide up with
+       an iOS-style decelerate curve instead of popping in instantly, and
+       blur what's behind them like a native sheet presentation. */
+    @keyframes sheet-backdrop-in{from{opacity:0}to{opacity:1}}
+    @keyframes sheet-panel-in{from{transform:translateY(24px);opacity:0.4}to{transform:translateY(0);opacity:1}}
+    .sheet-backdrop{backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);animation:sheet-backdrop-in 0.2s ease-out}
+    .sheet-panel{animation:sheet-panel-in 0.32s cubic-bezier(0.32,0.72,0,1)}
+
     input[type="date"]{max-width:100%;min-width:0;width:100%;-webkit-appearance:none;appearance:none;-webkit-min-logical-width:calc(100% - 16px)}
     :root{--app-max-width:100%}
+    /* Large phones (iPhone Plus/Pro Max, ~420-599px) get a little breathing
+       room on the sides instead of edge-to-edge content — applies uniformly
+       to the app and to sheets since both size off this same variable. */
+    @media(min-width:420px){:root{--app-max-width:calc(100% - 24px)}}
     @media(min-width:600px){:root{--app-max-width:680px}}
     @media(min-width:900px){:root{--app-max-width:780px}}
     @media(min-width:1200px){:root{--app-max-width:860px}}
@@ -30,12 +53,17 @@
     .day-table{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed}
     .day-table thead th{position:sticky;top:0;z-index:5;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;padding:8px 10px;border-bottom:2px solid var(--border2);background:var(--bg);white-space:nowrap;overflow:hidden}
     .day-row{cursor:pointer;transition:background 0.12s,opacity 0.2s}
-    .day-row:hover{background:var(--hover)}
-    .day-row td{padding:0;border-bottom:2px solid var(--border2);vertical-align:middle;overflow:hidden;transition:background 0.15s,opacity 0.2s}
+    /* !important: the row's background is also set inline (rowBg, alternating
+       stripe/swap colors) which otherwise always wins over a plain selector. */
+    .day-row:hover{background:var(--hover) !important}
+    .day-row:active{background:var(--hover) !important}
+    .day-row td{padding:0;vertical-align:middle;overflow:hidden;transition:background 0.15s,opacity 0.2s}
+    /* Hairline separator inset like an iOS table view — starts after the date
+       column instead of full-bleed, and the date column itself stays bare. */
+    .day-row td:not(:first-child){border-bottom:1px solid var(--border)}
 
     /* Dimmed state — when another card is open */
     .day-row.dimmed{opacity:var(--dim-opacity)}
-    .day-row.dimmed td{border-bottom-color:var(--border)}
 
     /* Expanded header row — top + right only (left already colored by inline bar) */
     .day-row.expanded td{border-bottom:none;background:var(--surface) !important}
@@ -57,7 +85,7 @@
   const KEY  = "tripplanner_v3";
   const SKEY = "tripplanner_settings";
   const DEF  = { name:"Mon Voyage", startDate:"", endDate:"", days:[], cards:[] };
-  const DEFS = { previewLines:2, fontSize:14, remoteUrl:"", theme:"light", gistId:"", gistToken:"", gistFilename:"voyage.json" };
+  const DEFS = { previewLines:2, fontSize:15, remoteUrl:"", theme:"light", gistId:"", gistToken:"", gistFilename:"voyage.json" };
 
   const uid   = () => Date.now().toString(36)+Math.random().toString(36).slice(2);
   const load  = () => { try { const s=localStorage.getItem(KEY); if(!s) return DEF; const p=JSON.parse(s); if(!p||!Array.isArray(p.days)||!Array.isArray(p.cards)) return DEF; return {...DEF,...p}; } catch { return DEF; } };
@@ -68,7 +96,7 @@
       bg:"#f5f0e8", surface:"#ffffff", surface2:"#faf7f2",
       border:"#e2d9cc", border2:"#cdc3b4",
       accent:"#c4622a", accent2:"#2a7fa8",
-      text:"#2c2418", muted:"#8a7e6e", danger:"#b83030",
+      text:"#2c2418", muted:"#6e6455", danger:"#b83030",
       onAccent:"#ffffff", hover:"#f0ebe0",
       tableHead:"#ede8df", rowAlt:"#faf7f2",
       detailBg:"#f7f3ec", dimOpacity:"0.35",
@@ -238,52 +266,140 @@
   function ColorPicker({value, onChange}) {
     return (
       <div style={{display:"flex",gap:8,alignItems:"center",marginTop:4}}>
-        <div onClick={()=>onChange(null)} style={{width:28,height:28,borderRadius:"50%",background:C.surface2,border:`2px solid ${!value?C.accent:C.border2}`,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,color:C.muted}}>✕</div>
+        <div className="tap-scale" onClick={()=>onChange(null)} style={{width:28,height:28,borderRadius:"50%",background:C.surface2,border:`2px solid ${!value?C.accent:C.border2}`,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,color:C.muted}}>✕</div>
         {BADGE_COLORS.map(c=>(
-          <div key={c.id} onClick={()=>onChange(c.id)} title={c.label} style={{width:28,height:28,borderRadius:"50%",background:c.hex,cursor:"pointer",outline:value===c.id?`3px solid ${c.hex}`:"none",outlineOffset:2,border:`2px solid ${value===c.id?"#fff":"transparent"}`}}/>
+          <div key={c.id} className="tap-scale" onClick={()=>onChange(c.id)} title={c.label} style={{width:28,height:28,borderRadius:"50%",background:c.hex,cursor:"pointer",outline:value===c.id?`3px solid ${c.hex}`:"none",outlineOffset:2,border:`2px solid ${value===c.id?"#fff":"transparent"}`}}/>
         ))}
       </div>
     );
   }
 
+  /* ════════ MARKDOWN HELP ════════ */
+  function MarkdownHelp() {
+    return (
+      <div style={{padding:"10px 14px",borderRadius:10,background:`${C.accent}0c`,border:`1px solid ${C.accent}25`}}>
+        <div style={{fontSize:11,fontWeight:700,color:C.accent,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>Aide markdown</div>
+        <div style={{fontSize:12,color:C.muted,lineHeight:1.9}}>
+          <strong style={{color:C.text}}># Titre</strong> · <strong style={{color:C.text}}>**gras**</strong> · <strong style={{color:C.text}}>*italique*</strong> · <strong style={{color:C.text}}>__souligné__</strong><br/>
+          <strong style={{color:C.text}}>&gt; texte</strong> → sous-étape · <strong style={{color:C.text}}>---</strong> → séparateur<br/>
+          <strong style={{color:C.text}}>https://...</strong> → lien cliquable<br/>
+          <span style={{color:INLINE_COLORS.r}}>{"{r:}"}</span> rouge · <span style={{color:INLINE_COLORS.o}}>{"{o:}"}</span> orange · <span style={{color:INLINE_COLORS.b}}>{"{b:}"}</span> bleu · <span style={{color:INLINE_COLORS.v}}>{"{v:}"}</span> vert<br/>
+          <span style={{color:INLINE_COLORS.f}}>{"{f:}"}</span> fuchsia · <span style={{color:INLINE_COLORS.m}}>{"{m:}"}</span> violet · <span style={{color:INLINE_COLORS.t}}>{"{t:}"}</span> turquoise · <span style={{color:INLINE_COLORS.d}}>{"{d:}"}</span> doré
+        </div>
+      </div>
+    );
+  }
+
   /* ════════ FORMAT TOOLBAR ════════ */
-  function FormatToolbar({focusedRef}) {
-    const wrap = (before,after) => {
-      const el=focusedRef.current; if(!el) return;
-      const s=el.selectionStart, e=el.selectionEnd, v=el.value, sel=v.slice(s,e);
-      const nv=v.slice(0,s)+before+sel+after+v.slice(e);
+  function FormatToolbar({focusedRef, helpOpen, onToggleHelp, active=true}) {
+    const [colorOpen,setColorOpen] = useState(false);
+    const btnBase = {minWidth:44,height:44,borderRadius:9,background:C.surface2,border:`1px solid ${C.border2}`,cursor:"pointer",fontSize:14,color:C.text,display:"flex",alignItems:"center",justifyContent:"center"};
+
+    // Wrap: selection (or a selected placeholder if nothing is selected) so the
+    // user can immediately type over it — previously an empty selection left
+    // the cursor stranded after the closing tag instead of between the tags.
+    // Also guards against a stale ref pointing at a textarea that's been
+    // unmounted (field switched to Aperçu) — silently no-ops instead of
+    // writing into a detached node.
+    const wrapSelection = (before,after,placeholder="texte") => {
+      const el=focusedRef.current; if(!el || !document.body.contains(el)) return;
+      const s=el.selectionStart, e=el.selectionEnd, v=el.value;
+      const mid = e>s ? v.slice(s,e) : placeholder;
+      const nv = v.slice(0,s)+before+mid+after+v.slice(e);
       Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype,"value").set.call(el,nv);
       el.dispatchEvent(new Event("input",{bubbles:true}));
       el.focus();
-      const c=s+before.length+sel.length+after.length;
-      el.setSelectionRange(sel.length>0?s+before.length:c, sel.length>0?s+before.length+sel.length:c);
+      el.setSelectionRange(s+before.length, s+before.length+mid.length);
     };
+    const insertAtCursor = str => {
+      const el=focusedRef.current; if(!el || !document.body.contains(el)) return;
+      const s=el.selectionStart, e=el.selectionEnd, v=el.value;
+      const nv = v.slice(0,s)+str+v.slice(e);
+      Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype,"value").set.call(el,nv);
+      el.dispatchEvent(new Event("input",{bubbles:true}));
+      el.focus();
+      const c=s+str.length;
+      el.setSelectionRange(c,c);
+    };
+
     const btns=[
-      {l:"G",  title:"Gras",       s:{fontWeight:700},                      a:()=>wrap("**","**")},
-      {l:"I",  title:"Italique",   s:{fontStyle:"italic"},                  a:()=>wrap("*","*")},
-      {l:"S",  title:"Souligné",   s:{textDecoration:"underline"},          a:()=>wrap("__","__")},
-      {l:"●",  title:"Rouge",      s:{color:INLINE_COLORS.r,fontSize:16},   a:()=>wrap("{r:","}")},
-      {l:"●",  title:"Orange",     s:{color:INLINE_COLORS.o,fontSize:16},   a:()=>wrap("{o:","}")},
-      {l:"●",  title:"Bleu",       s:{color:INLINE_COLORS.b,fontSize:16},   a:()=>wrap("{b:","}")},
-      {l:"●",  title:"Vert",       s:{color:INLINE_COLORS.v,fontSize:16},   a:()=>wrap("{v:","}")},
-      {l:"●",  title:"Fuchsia",    s:{color:INLINE_COLORS.f,fontSize:16},   a:()=>wrap("{f:","}")},
-      {l:"●",  title:"Violet",     s:{color:INLINE_COLORS.m,fontSize:16},   a:()=>wrap("{m:","}")},
-      {l:"●",  title:"Turquoise",  s:{color:INLINE_COLORS.t,fontSize:16},   a:()=>wrap("{t:","}")},
-      {l:"●",  title:"Doré",       s:{color:INLINE_COLORS.d,fontSize:16},   a:()=>wrap("{d:","}")},
-      {l:"➔",  title:"Flèche",     s:{fontSize:15},                         a:()=>wrap("➔","")},
-      {l:"↳",  title:"Sous-étape", s:{fontSize:15},                         a:()=>wrap("> ","")},
-      {l:"—",  title:"Séparateur", s:{fontSize:15},                         a:()=>wrap("\n---\n","")},
+      {l:"G",  title:"Gras",       s:{fontWeight:700},             a:()=>wrapSelection("**","**")},
+      {l:"I",  title:"Italique",   s:{fontStyle:"italic"},         a:()=>wrapSelection("*","*")},
+      {l:"S",  title:"Souligné",   s:{textDecoration:"underline"}, a:()=>wrapSelection("__","__")},
+      {l:"➔",  title:"Flèche",     s:{fontSize:15},                a:()=>insertAtCursor("➔")},
+      {l:"↳",  title:"Sous-étape", s:{fontSize:15},                a:()=>insertAtCursor("> ")},
+      {l:"—",  title:"Séparateur", s:{fontSize:15},                a:()=>insertAtCursor("\n---\n")},
+    ];
+    const colorBtns=[
+      {k:"r",label:"Rouge"},{k:"o",label:"Orange"},{k:"b",label:"Bleu"},{k:"v",label:"Vert"},
+      {k:"f",label:"Fuchsia"},{k:"m",label:"Violet"},{k:"t",label:"Turquoise"},{k:"d",label:"Doré"},
     ];
     return (
-      <div style={{display:"flex",flexWrap:"wrap",gap:6,paddingBottom:8}}>
-        {btns.map((b,i)=>(
-          <button key={i} title={b.title}
-            onMouseDown={e=>{e.preventDefault();b.a();}}
-            onTouchStart={e=>{e.preventDefault();b.a();}}
-            style={{minWidth:32,height:32,borderRadius:7,background:C.surface2,border:`1px solid ${C.border2}`,cursor:"pointer",fontSize:13,color:C.text,display:"flex",alignItems:"center",justifyContent:"center",...b.s}}>
-            {b.l}
-          </button>
-        ))}
+      <div style={{marginBottom:8}}>
+        <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+          <div style={{display:"flex",flexWrap:"wrap",gap:6,opacity:active?1:0.4,pointerEvents:active?"auto":"none",transition:"opacity 0.15s"}} title={active?undefined:"Passe ce champ en mode Écrire pour formater"}>
+            {btns.map((b,i)=>(
+              <button key={i} title={b.title}
+                onMouseDown={e=>{e.preventDefault();b.a();}}
+                onTouchStart={e=>{e.preventDefault();b.a();}}
+                style={{...btnBase,...b.s}}>
+                {b.l}
+              </button>
+            ))}
+            <button title="Couleur du texte"
+              onMouseDown={e=>{e.preventDefault();setColorOpen(o=>!o);}}
+              onTouchStart={e=>{e.preventDefault();setColorOpen(o=>!o);}}
+              style={{...btnBase,fontSize:15,background:colorOpen?`${C.accent}20`:C.surface2,border:`1px solid ${colorOpen?C.accent:C.border2}`}}>
+              🎨
+            </button>
+          </div>
+          {onToggleHelp && (
+            <button title="Aide syntaxe"
+              onMouseDown={e=>{e.preventDefault();onToggleHelp();}}
+              onTouchStart={e=>{e.preventDefault();onToggleHelp();}}
+              style={{...btnBase,fontWeight:700,color:C.muted,background:helpOpen?`${C.accent}20`:C.surface2,border:`1px solid ${helpOpen?C.accent:C.border2}`}}>
+              ?
+            </button>
+          )}
+        </div>
+        {colorOpen && active && (
+          <div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:6}}>
+            {colorBtns.map(c=>(
+              <button key={c.k} title={c.label}
+                onMouseDown={e=>{e.preventDefault();wrapSelection(`{${c.k}:`,"}");setColorOpen(false);}}
+                onTouchStart={e=>{e.preventDefault();wrapSelection(`{${c.k}:`,"}");setColorOpen(false);}}
+                style={{...btnBase,color:INLINE_COLORS[c.k],fontSize:16}}>
+                ●
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  /* ════════ MARKDOWN FIELD (write / live preview) ════════ */
+  function MdField({label, value, onChange, placeholder, minHeight, taRef, onFocus, withBullets=false, onEnterPreview}) {
+    const [preview,setPreview] = useState(false);
+    const lbl = {fontSize:11,fontWeight:600,color:C.muted,textTransform:"uppercase",letterSpacing:0.8};
+    const ta  = {width:"100%",padding:"11px 13px",borderRadius:10,background:C.surface2,border:`1px solid ${C.border2}`,color:C.text,fontSize:16,outline:"none",resize:"vertical",minHeight,lineHeight:1.65};
+    const tab = active => ({padding:"4px 10px",borderRadius:7,fontSize:11,fontWeight:600,cursor:"pointer",border:`1px solid ${active?C.accent:C.border2}`,background:active?`${C.accent}15`:"transparent",color:active?C.accent:C.muted});
+    return (
+      <div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+          <label style={lbl}>{label}</label>
+          <div style={{display:"flex",gap:4}}>
+            <button type="button" onClick={()=>setPreview(false)} style={tab(!preview)}>✏️ Écrire</button>
+            <button type="button" onClick={()=>{onEnterPreview&&onEnterPreview();setPreview(true);}} style={tab(preview)}>👁 Aperçu</button>
+          </div>
+        </div>
+        {preview ? (
+          <div style={{...ta,overflowY:"auto"}}>
+            {value ? renderBlock(value,14,withBullets) : <span style={{color:C.muted,fontSize:13,fontStyle:"italic"}}>Rien à prévisualiser…</span>}
+          </div>
+        ) : (
+          <textarea ref={taRef} onFocus={onFocus} style={ta} placeholder={placeholder} value={value||""} onChange={e=>onChange(e.target.value)}/>
+        )}
       </div>
     );
   }
@@ -542,7 +658,7 @@
         <div style={{paddingTop:safeTop,background:C.bg,position:"sticky",top:0,zIndex:10,borderBottom:`1px solid ${C.border}`}}>
           {/* Top bar */}
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 16px 0"}}>
-            <div onClick={()=>openModal("trip")} style={{cursor:"pointer",flex:1,minWidth:0}}>
+            <div className="tap-scale" onClick={()=>openModal("trip")} style={{cursor:"pointer",flex:1,minWidth:0}}>
               <div style={{fontFamily:C.serif,fontSize:18,fontWeight:600,color:C.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",lineHeight:1.2}}>{data.name}</div>
               <div style={{display:"flex",alignItems:"center",gap:8,marginTop:1,flexWrap:"wrap"}}>
                 {tripLabel&&<div style={{fontSize:11,color:C.accent,fontWeight:500}}>{tripLabel} · {data.days.filter(d=>!d.archived).length} jours</div>}
@@ -555,6 +671,7 @@
               <button onClick={()=>saveSettings({...settings,theme:currentTheme==="light"?"dark":"light"})} style={{padding:"5px 9px",borderRadius:8,background:C.surface,border:`1px solid ${C.border2}`,color:C.muted,fontSize:13,cursor:"pointer"}} title="Changer de thème">{currentTheme==="light"?"🌙":"☀️"}</button>
               <div style={{fontSize:10,color:syncing?C.accent:C.muted,minWidth:16,textAlign:"center"}}>{syncing?"⟳":"✓"}</div>
               <button onClick={()=>setShowSettings(true)} style={{padding:"5px 9px",borderRadius:8,background:C.surface,border:`1px solid ${C.border2}`,color:C.muted,fontSize:14,cursor:"pointer"}}>⚙️</button>
+              <button onClick={()=>openModal(tab==="days"?"day":"card")} style={{padding:"5px 11px",borderRadius:8,background:C.accent,border:"none",color:C.onAccent,fontSize:16,fontWeight:700,cursor:"pointer",lineHeight:1}} title="Ajouter">+</button>
             </div>
           </div>
 
@@ -572,10 +689,12 @@
             </div>
           )}
 
-          {/* Tabs */}
-          <div style={{display:"flex",marginTop:8}}>
+          {/* Tabs — iOS-style segmented control (sliding pill) instead of
+              underline tabs, which is the Material/Android convention */}
+          <div style={{position:"relative",display:"flex",margin:"8px 16px 12px",padding:3,background:C.surface2,border:`1px solid ${C.border}`,borderRadius:10}}>
+            <div style={{position:"absolute",top:3,bottom:3,left:3,width:"calc(50% - 3px)",borderRadius:8,background:C.surface,boxShadow:"0 1px 3px rgba(0,0,0,0.15)",transform:tab==="days"?"translateX(0%)":"translateX(100%)",transition:"transform 0.28s cubic-bezier(0.32,0.72,0,1)"}}/>
             {[["days","📅 Programme"],["cards","📋 Infos voyage"]].map(([id,label])=>(
-              <button key={id} onClick={()=>{setTab(id);setSearchQuery("");}} style={{flex:1,padding:"9px 0 10px",background:"none",border:"none",cursor:"pointer",color:tab===id?C.accent:C.muted,fontSize:13,fontWeight:tab===id?600:400,borderBottom:tab===id?`2px solid ${C.accent}`:"2px solid transparent",transition:"color 0.15s"}}>{label}</button>
+              <button key={id} onClick={()=>{setTab(id);setSearchQuery("");}} style={{flex:1,position:"relative",zIndex:1,padding:"7px 0",background:"none",border:"none",cursor:"pointer",color:tab===id?C.text:C.muted,fontSize:13,fontWeight:tab===id?600:500,transition:"color 0.15s"}}>{label}</button>
             ))}
           </div>
         </div>
@@ -589,7 +708,7 @@
         )}
 
         {/* ── CONTENT ── */}
-        <div style={{flex:1,overflowX:"auto",paddingBottom:`calc(72px + ${safeBot})`}}>
+        <div style={{flex:1,overflowX:"auto",paddingBottom:`calc(20px + ${safeBot})`}}>
 
           {/* ── DAYS TAB — TABLE VIEW ── */}
           {tab==="days"&&(()=>{
@@ -727,9 +846,6 @@
           </div>
         )}
 
-        {/* FAB */}
-        <button onClick={()=>openModal(tab==="days"?"day":"card")} style={{position:"fixed",bottom:`calc(16px + ${safeBot})`,right:"max(16px, calc(50vw - var(--app-max-width) / 2 + 16px))",width:52,height:52,borderRadius:"50%",background:C.accent,border:"none",cursor:"pointer",fontSize:26,color:C.onAccent,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",boxShadow:`0 3px 14px ${C.accent}66`,zIndex:20}}>+</button>
-
         {/* Toast */}
         {toast&&<div style={{position:"fixed",top:`calc(12px + ${safeTop})`,left:"50%",transform:"translateX(-50%)",background:currentTheme==="dark"?"#2c2c2e":"#2c2418",borderRadius:10,padding:"10px 18px",fontSize:13,color:"#fff",zIndex:100,whiteSpace:"nowrap",boxShadow:"0 4px 20px rgba(0,0,0,0.3)",border:`1px solid ${C.border}`}}>{toast}</div>}
 
@@ -811,11 +927,11 @@
           {/* Indicators + chevron */}
           <td style={{width:36,padding:"10px 6px",textAlign:"center",verticalAlign:"middle"}}>
             <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:3}}>
-              <div style={{display:"flex",gap:3,justifyContent:"center"}}>
-                {hasPlan &&!isArchived&&<div style={{width:4,height:4,borderRadius:"50%",background:C.accent}}/>}
-                {hasNotes&&!isArchived&&<div style={{width:4,height:4,borderRadius:"50%",background:C.accent2}}/>}
+              <div style={{display:"flex",gap:4,justifyContent:"center"}}>
+                {hasPlan &&!isArchived&&<div style={{width:6,height:6,borderRadius:"50%",background:C.accent}}/>}
+                {hasNotes&&!isArchived&&<div style={{width:6,height:6,borderRadius:"50%",background:C.accent2}}/>}
               </div>
-              <div style={{color:C.muted,fontSize:9}}>{expanded?"▲":"▼"}</div>
+              <div style={{color:C.muted,fontSize:14,lineHeight:1,transform:expanded?"rotate(90deg)":"rotate(0deg)",transition:"transform 0.2s ease"}}>›</div>
             </div>
           </td>
         </tr>
@@ -920,7 +1036,7 @@
 
           {/* Chevron cell */}
           <td style={{width:36,padding:"10px 6px",textAlign:"center",verticalAlign:"middle"}}>
-            <div style={{color:C.muted,fontSize:9}}>{open?"▲":"▼"}</div>
+            <div style={{color:C.muted,fontSize:14,lineHeight:1,transform:open?"rotate(90deg)":"rotate(0deg)",transition:"transform 0.2s ease"}}>›</div>
           </td>
         </tr>
 
@@ -982,8 +1098,8 @@
     const syncReady  = !!settings.remoteUrl?.trim();
 
     return (
-      <div onClick={e=>e.target===e.currentTarget&&onClose()} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.35)",zIndex:50,display:"flex",flexDirection:"column",justifyContent:"flex-end"}}>
-        <div style={{background:C.surface,borderRadius:"20px 20px 0 0",border:`1px solid ${C.border}`,padding:`16px 20px calc(${safeBot} + 20px)`,maxHeight:"90svh",overflowY:"auto",touchAction:"pan-y",width:"100%",maxWidth:"var(--app-max-width)",margin:"0 auto"}}>
+      <div className="sheet-backdrop" onClick={e=>e.target===e.currentTarget&&onClose()} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.35)",zIndex:50,display:"flex",flexDirection:"column",justifyContent:"flex-end"}}>
+        <div className="sheet-panel" style={{background:C.surface,borderRadius:"20px 20px 0 0",border:`1px solid ${C.border}`,padding:`16px 20px calc(${safeBot} + 20px)`,maxHeight:"90svh",overflowY:"auto",touchAction:"pan-y",width:"100%",maxWidth:"var(--app-max-width)",margin:"0 auto"}}>
           <div style={{width:36,height:4,background:C.border,borderRadius:2,margin:"0 auto 20px"}}/>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
             <div style={{fontFamily:C.serif,fontSize:18,fontWeight:600,color:C.text}}>Paramètres</div>
@@ -1068,16 +1184,7 @@
           </div>
 
           {/* ── AIDE MARKDOWN ── */}
-          <div style={{padding:"10px 14px",borderRadius:10,background:`${C.accent}0c`,border:`1px solid ${C.accent}25`}}>
-            <div style={{fontSize:11,fontWeight:700,color:C.accent,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>Aide markdown</div>
-            <div style={{fontSize:12,color:C.muted,lineHeight:1.9}}>
-              <strong style={{color:C.text}}># Titre</strong> · <strong style={{color:C.text}}>**gras**</strong> · <strong style={{color:C.text}}>*italique*</strong> · <strong style={{color:C.text}}>__souligné__</strong><br/>
-              <strong style={{color:C.text}}>&gt; texte</strong> → sous-étape · <strong style={{color:C.text}}>---</strong> → séparateur<br/>
-              <strong style={{color:C.text}}>https://...</strong> → lien cliquable<br/>
-              <span style={{color:INLINE_COLORS.r}}>{"{r:}"}</span> rouge · <span style={{color:INLINE_COLORS.o}}>{"{o:}"}</span> orange · <span style={{color:INLINE_COLORS.b}}>{"{b:}"}</span> bleu · <span style={{color:INLINE_COLORS.v}}>{"{v:}"}</span> vert<br/>
-              <span style={{color:INLINE_COLORS.f}}>{"{f:}"}</span> fuchsia · <span style={{color:INLINE_COLORS.m}}>{"{m:}"}</span> violet · <span style={{color:INLINE_COLORS.t}}>{"{t:}"}</span> turquoise · <span style={{color:INLINE_COLORS.d}}>{"{d:}"}</span> doré
-            </div>
-          </div>
+          <MarkdownHelp/>
         </div>
         {showHelp && <HelpLinkModal onClose={()=>setShowHelp(false)} safeBot={safeBot}/>}
         {showLocalHelp  && <HelpLocalModal  onClose={()=>setShowLocalHelp(false)}  safeBot={safeBot}/>}
@@ -1093,8 +1200,8 @@
     const step={fontSize:13,color:C.text,lineHeight:1.65,marginBottom:10,paddingLeft:22,position:"relative"};
     const num={position:"absolute",left:0,top:0,width:16,height:16,borderRadius:"50%",background:C.accent,color:C.onAccent,fontSize:10,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center"};
     return (
-      <div onClick={e=>e.target===e.currentTarget&&onClose()} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:60,display:"flex",flexDirection:"column",justifyContent:"flex-end"}}>
-        <div style={{background:C.surface,borderRadius:"20px 20px 0 0",border:`1px solid ${C.border}`,padding:`16px 20px calc(${safeBot} + 20px)`,maxHeight:"92svh",overflowY:"auto",touchAction:"pan-y",width:"100%",maxWidth:"var(--app-max-width)",margin:"0 auto"}}>
+      <div className="sheet-backdrop" onClick={e=>e.target===e.currentTarget&&onClose()} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:60,display:"flex",flexDirection:"column",justifyContent:"flex-end"}}>
+        <div className="sheet-panel" style={{background:C.surface,borderRadius:"20px 20px 0 0",border:`1px solid ${C.border}`,padding:`16px 20px calc(${safeBot} + 20px)`,maxHeight:"92svh",overflowY:"auto",touchAction:"pan-y",width:"100%",maxWidth:"var(--app-max-width)",margin:"0 auto"}}>
           <div style={{width:36,height:4,background:C.border,borderRadius:2,margin:"0 auto 20px"}}/>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
             <div style={{fontFamily:C.serif,fontSize:18,fontWeight:600,color:C.text}}>Publier sur Gist</div>
@@ -1128,8 +1235,8 @@
     const h={fontFamily:C.serif,fontSize:15,fontWeight:600,color:C.accent,margin:"16px 0 8px"};
     const p={fontSize:13,color:C.text,lineHeight:1.65,marginBottom:8};
     return (
-      <div onClick={e=>e.target===e.currentTarget&&onClose()} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:60,display:"flex",flexDirection:"column",justifyContent:"flex-end"}}>
-        <div style={{background:C.surface,borderRadius:"20px 20px 0 0",border:`1px solid ${C.border}`,padding:`16px 20px calc(${safeBot} + 20px)`,maxHeight:"92svh",overflowY:"auto",touchAction:"pan-y",width:"100%",maxWidth:"var(--app-max-width)",margin:"0 auto"}}>
+      <div className="sheet-backdrop" onClick={e=>e.target===e.currentTarget&&onClose()} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:60,display:"flex",flexDirection:"column",justifyContent:"flex-end"}}>
+        <div className="sheet-panel" style={{background:C.surface,borderRadius:"20px 20px 0 0",border:`1px solid ${C.border}`,padding:`16px 20px calc(${safeBot} + 20px)`,maxHeight:"92svh",overflowY:"auto",touchAction:"pan-y",width:"100%",maxWidth:"var(--app-max-width)",margin:"0 auto"}}>
           <div style={{width:36,height:4,background:C.border,borderRadius:2,margin:"0 auto 20px"}}/>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
             <div style={{fontFamily:C.serif,fontSize:18,fontWeight:600,color:C.text}}>Fichier local</div>
@@ -1154,8 +1261,14 @@
     const planningRef = useRef(null);
     const notesRef    = useRef(null);
     const contentRef  = useRef(null);
-    const onFocus = ref => { focusedRef.current = ref.current; };
     const [newTodo, setNewTodo] = useState("");
+    const [showHelp, setShowHelp] = useState(false);
+    // Tracks which field currently owns the toolbar (null when the last
+    // focused field switched to Aperçu) so FormatToolbar can grey itself out
+    // instead of silently no-oping on a detached textarea.
+    const [activeField, setActiveField] = useState(null);
+    const onFocus = (ref,key) => { focusedRef.current = ref.current; setActiveField(key); };
+    const onLeavePreview = key => { setActiveField(a => a===key ? null : a); if(activeField===key) focusedRef.current = null; };
     const isEdit   = !!modal.item;
     const inp      = {width:"100%",padding:"11px 13px",borderRadius:10,background:C.surface2,border:`1px solid ${C.border2}`,color:C.text,fontSize:16,outline:"none"};
     const ta       = {...inp,resize:"vertical",minHeight:110,lineHeight:1.65};
@@ -1170,8 +1283,8 @@
     const removeTodo = id => setForm({...form, todos:(form.todos||[]).filter(t=>t.id!==id)});
 
     return (
-      <div onClick={e=>e.target===e.currentTarget&&onClose()} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.35)",zIndex:50,display:"flex",flexDirection:"column",justifyContent:"flex-end"}}>
-        <div style={{background:C.surface,borderRadius:"20px 20px 0 0",border:`1px solid ${C.border}`,padding:`16px 20px calc(${safeBot} + 24px)`,maxHeight:"90svh",overflowY:"auto",touchAction:"pan-y",width:"100%",maxWidth:"var(--app-max-width)",margin:"0 auto"}}>
+      <div className="sheet-backdrop" onClick={e=>e.target===e.currentTarget&&onClose()} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.35)",zIndex:50,display:"flex",flexDirection:"column",justifyContent:"flex-end"}}>
+        <div className="sheet-panel" style={{background:C.surface,borderRadius:"20px 20px 0 0",border:`1px solid ${C.border}`,padding:`16px 20px calc(${safeBot} + 24px)`,maxHeight:"90svh",overflowY:"auto",touchAction:"pan-y",width:"100%",maxWidth:"var(--app-max-width)",margin:"0 auto"}}>
           <div style={{width:36,height:4,background:C.border,borderRadius:2,margin:"0 auto 20px"}}/>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
             <div style={{fontFamily:C.serif,fontSize:18,fontWeight:600,color:C.text}}>
@@ -1194,15 +1307,14 @@
                 <input type="date" style={inp} value={form.date||""} onChange={e=>setForm({...form,date:e.target.value})}/>
                 {form.date&&<div style={{fontSize:12,color:C.accent,marginTop:6,textTransform:"capitalize"}}>{fmtLong(form.date)}</div>}
               </div>
-              <FormatToolbar focusedRef={focusedRef}/>
-              <div>
-                <label style={lbl}>📅 Programme de la journée</label>
-                <textarea ref={planningRef} onFocus={()=>onFocus(planningRef)} style={{...ta,minHeight:140}} placeholder={"# Matin\n08h00 Petit déjeuner à l'hôtel\n09h30 Départ pour Disneyland\n> depuis la station centrale"} value={form.planning||""} onChange={e=>setForm({...form,planning:e.target.value})}/>
-              </div>
-              <div>
-                <label style={lbl}>📌 Infos pratiques</label>
-                <textarea ref={notesRef} onFocus={()=>onFocus(notesRef)} style={ta} placeholder={"Résa hôtel: ABC-1234\nCheck-in: 15h00\nhttps://mon-hotel.com"} value={form.notes||""} onChange={e=>setForm({...form,notes:e.target.value})}/>
-              </div>
+              <FormatToolbar focusedRef={focusedRef} helpOpen={showHelp} onToggleHelp={()=>setShowHelp(h=>!h)} active={!!activeField}/>
+              {showHelp && <MarkdownHelp/>}
+              <MdField label="📅 Programme de la journée" minHeight={140} taRef={planningRef} onFocus={()=>onFocus(planningRef,"planning")} onEnterPreview={()=>onLeavePreview("planning")}
+                placeholder={"# Matin\n08h00 Petit déjeuner à l'hôtel\n09h30 Départ pour Disneyland\n> depuis la station centrale"}
+                value={form.planning} onChange={v=>setForm({...form,planning:v})}/>
+              <MdField label="📌 Infos pratiques" minHeight={110} taRef={notesRef} onFocus={()=>onFocus(notesRef,"notes")} onEnterPreview={()=>onLeavePreview("notes")} withBullets={true}
+                placeholder={"Résa hôtel: ABC-1234\nCheck-in: 15h00\nhttps://mon-hotel.com"}
+                value={form.notes} onChange={v=>setForm({...form,notes:v})}/>
               <div style={{display:"flex",gap:10,marginTop:4}}>
                 {isEdit&&<button onClick={()=>onDeleteDay(modal.item.id)} style={{flex:1,padding:"13px",borderRadius:11,background:`${C.danger}10`,border:`1px solid ${C.danger}30`,color:C.danger,fontSize:14,cursor:"pointer"}}>Supprimer</button>}
                 <button onClick={onSaveDay} style={{flex:2,padding:"13px",borderRadius:11,background:C.accent,border:"none",color:C.onAccent,fontSize:15,fontWeight:600,cursor:"pointer"}}>{isEdit?"Enregistrer":"Ajouter"}</button>
@@ -1248,9 +1360,11 @@
                 </div>
               ):(
                 <div>
-                  <FormatToolbar focusedRef={focusedRef}/>
-                  <label style={lbl}>Contenu</label>
-                  <textarea ref={contentRef} onFocus={()=>onFocus(contentRef)} style={{...ta,minHeight:160}} placeholder={"**Hôtel Sunshine Inn** — Chambre 412\nRésa: XBGT-9834\nhttps://hotel-sunshine.com"} value={form.content||""} onChange={e=>setForm({...form,content:e.target.value})}/>
+                  <FormatToolbar focusedRef={focusedRef} helpOpen={showHelp} onToggleHelp={()=>setShowHelp(h=>!h)} active={!!activeField}/>
+                  {showHelp && <div style={{marginBottom:12}}><MarkdownHelp/></div>}
+                  <MdField label="Contenu" minHeight={160} taRef={contentRef} onFocus={()=>onFocus(contentRef,"content")} onEnterPreview={()=>onLeavePreview("content")} withBullets={true}
+                    placeholder={"**Hôtel Sunshine Inn** — Chambre 412\nRésa: XBGT-9834\nhttps://hotel-sunshine.com"}
+                    value={form.content} onChange={v=>setForm({...form,content:v})}/>
                 </div>
               )}
               <div style={{display:"flex",gap:10,marginTop:4}}>
