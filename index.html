@@ -60,8 +60,8 @@
   const DEFS = { previewLines:2, fontSize:14, remoteUrl:"", theme:"light", gistId:"", gistToken:"", gistFilename:"voyage.json" };
 
   const uid   = () => Date.now().toString(36)+Math.random().toString(36).slice(2);
-  const load  = () => { try { const s=localStorage.getItem(KEY);  return s?JSON.parse(s):DEF;           } catch { return DEF;  } };
-  const loadS = () => { try { const s=localStorage.getItem(SKEY); return s?{...DEFS,...JSON.parse(s)}:DEFS; } catch { return DEFS; } };
+  const load  = () => { try { const s=localStorage.getItem(KEY); if(!s) return DEF; const p=JSON.parse(s); if(!p||!Array.isArray(p.days)||!Array.isArray(p.cards)) return DEF; return {...DEF,...p}; } catch { return DEF; } };
+  const loadS = () => { try { const s=localStorage.getItem(SKEY); if(!s) return DEFS; const p=JSON.parse(s); if(!p||typeof p!=="object"||Array.isArray(p)) return DEFS; return {...DEFS,...p}; } catch { return DEFS; } };
 
   const THEMES = {
     light: {
@@ -152,8 +152,12 @@
     return days;
   };
 
-  /* ── Markdown parser ── */
-  const parseInline = text => {
+  /* ── Markdown parser ──
+     Single source of truth for inline + block parsing, shared by the live
+     React renderer (renderInline/renderBlock) and the static HTML export
+     (renderInlineHtml/renderHtmlBlock in generateShareHtml) so the two never
+     drift out of sync on supported syntax. */
+  const parseInline = (text, colors=INLINE_COLORS) => {
     const rx = /(\*\*(.+?)\*\*)|(\*(.+?)\*)|(__(.*?)__)|\{([romvftbd]):(.+?)\}|(https?:\/\/[^\s]+)|(\b\d{1,2}[h:]\d{2}(?:am|pm)?\b|\b\d{1,2}(?:am|pm)\b)/gi;
     const parts=[]; let last=0; let m;
     while((m=rx.exec(text))!==null){
@@ -161,13 +165,20 @@
       if     (m[1])  parts.push({t:"bold",      v:m[2]});
       else if(m[3])  parts.push({t:"italic",    v:m[4]});
       else if(m[5])  parts.push({t:"underline", v:m[6]});
-      else if(m[7])  parts.push({t:"color",     v:m[8], color:INLINE_COLORS[m[7]]});
+      else if(m[7])  parts.push({t:"color",     v:m[8], color:colors[m[7]]});
       else if(m[9])  parts.push({t:"url",       v:m[9]});
       else if(m[10]) parts.push({t:"time",      v:m[10]});
       last=m.index+m[0].length;
     }
     if(last<text.length) parts.push({t:"text",v:text.slice(last)});
     return parts;
+  };
+
+  const classifyLine = line => {
+    if(line.trim()==="---") return {type:"hr"};
+    const isH = line.startsWith("# ");
+    const isS = line.startsWith("> ");
+    return {type:isH?"h":isS?"s":"p", content:isH?line.slice(2):isS?line.slice(2):line};
   };
 
   const renderInline = (text, baseColor) => parseInline(text).map((p,i) => {
@@ -183,10 +194,9 @@
   const renderBlock = (text, fontSize, withBullets=false) => {
     if(!text) return null;
     return text.split("\n").filter(Boolean).map((line,i) => {
-      if(line.trim()==="---") return <div key={i} style={{height:1,background:C.border2,margin:"6px 0"}}/>;
-      const isH = line.startsWith("# ");
-      const isS = line.startsWith("> ");
-      const content = isH?line.slice(2):isS?line.slice(2):line;
+      const {type,content} = classifyLine(line);
+      if(type==="hr") return <div key={i} style={{height:1,background:C.border2,margin:"6px 0"}}/>;
+      const isH = type==="h", isS = type==="s";
       const fs = isH?fontSize+2:isS?fontSize-1:fontSize;
       const color = isH?C.accent:C.text;
       const mb = isH?5:3;
@@ -205,6 +215,22 @@
       return <div key={i} style={{fontSize:fs,color,fontWeight:isH?600:400,fontFamily:isH?C.serif:C.font,lineHeight:1.7,marginBottom:mb,overflowWrap:"anywhere",wordBreak:"break-word"}}>{renderInline(content,color)}</div>;
     });
   };
+
+  const escHtml = s => (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+
+  /* HTML-string counterpart of renderInline, for the static share export.
+     Always resolves {r:}..{d:} tags against the light palette regardless of
+     the current in-app theme, since the exported file is styled with fixed
+     light colors and is read outside the app. */
+  const renderInlineHtml = (text, baseColor, colors=INLINE_COLORS_BY_THEME.light) => parseInline(text, colors).map(p => {
+    if(p.t==="bold")      return `<strong style="font-weight:600;color:${baseColor}">${escHtml(p.v)}</strong>`;
+    if(p.t==="italic")    return `<em>${escHtml(p.v)}</em>`;
+    if(p.t==="underline") return `<u>${escHtml(p.v)}</u>`;
+    if(p.t==="color")     return `<span style="color:${p.color}">${renderInlineHtml(p.v,p.color,colors)}</span>`;
+    if(p.t==="time")      return `<strong style="font-weight:600;color:${baseColor}">${escHtml(p.v)}</strong>`;
+    if(p.t==="url")       return `<a href="${escHtml(p.v)}" target="_blank" style="color:#2a7fa8;text-decoration:underline;word-break:break-all">${escHtml(p.v)}</a>`;
+    return escHtml(p.v);
+  }).join("");
 
   const stripMd = t => (t||"").replace(/^# /,"").replace(/\*\*(.+?)\*\*/g,"$1").replace(/\*(.+?)\*/g,"$1").replace(/__(.*?)__/g,"$1").replace(/\{[romvftbd]:(.+?)\}/g,"$1").replace(/^> /,"");
 
@@ -446,19 +472,19 @@
     const generateShareHtml = () => {
       const activeDays  = data.days.filter(d=>!d.archived);
       const activeCards = data.cards.filter(c=>!c.archived);
-      const esc = s => (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 
-      const renderHtmlBlock = text => {
+      // Reuses the same classifyLine/renderInlineHtml as the live app (see
+      // markdown parser section) so this export can't silently drift from
+      // what's shown on-screen (colors, bullets, bold hours, sub-steps).
+      const renderHtmlBlock = (text, withBullets=false) => {
         if(!text) return "";
-        return (text||"").split("\n").filter(Boolean).map(line => {
-          if(line.trim()==="---") return `<hr style="border:none;border-top:1px solid #cdc3b4;margin:8px 0">`;
-          const isH = line.startsWith("# ");
-          const isS = line.startsWith("> ");
-          const content = isH?line.slice(2):isS?line.slice(2):line;
-          const escaped = esc(content).replace(/\*\*(.+?)\*\*/g,"<strong>$1</strong>").replace(/\*(.+?)\*/g,"<em>$1</em>").replace(/__(.+?)__/g,"<u>$1</u>").replace(/\{[romvftbd]:(.+?)\}/g,"$1").replace(/(https?:\/\/[^\s<]+)/g,`<a href="$1" target="_blank" style="color:#2a7fa8">$1</a>`);
-          if(isH) return `<div style="font-family:'Lora',serif;font-weight:600;font-size:15px;color:#c4622a;margin:10px 0 4px">${escaped}</div>`;
-          if(isS) return `<div style="padding-left:12px;border-left:2px solid #cdc3b4;color:#8a7e6e;font-size:13px;margin-bottom:3px">${escaped}</div>`;
-          return `<div style="font-size:13px;margin-bottom:3px;line-height:1.7">${escaped}</div>`;
+        return text.split("\n").filter(Boolean).map(line => {
+          const {type,content} = classifyLine(line);
+          if(type==="hr") return `<hr style="border:none;border-top:1px solid #cdc3b4;margin:8px 0">`;
+          if(type==="h")   return `<div style="font-family:'Lora',serif;font-weight:600;font-size:15px;color:#c4622a;margin:10px 0 4px">${renderInlineHtml(content,"#c4622a")}</div>`;
+          if(type==="s")   return `<div style="display:flex;gap:6px;align-items:baseline;padding-left:12px;border-left:2px solid #cdc3b4;color:#8a7e6e;font-size:13px;margin-bottom:3px"><span>➔</span><span>${renderInlineHtml(content,"#8a7e6e")}</span></div>`;
+          if(withBullets)  return `<div style="display:flex;gap:8px;align-items:baseline;margin-bottom:3px"><span style="width:4px;height:4px;border-radius:50%;background:#2a7fa8;flex-shrink:0"></span><span style="font-size:13px;line-height:1.7;color:#2c2418">${renderInlineHtml(content,"#2c2418")}</span></div>`;
+          return `<div style="font-size:13px;margin-bottom:3px;line-height:1.7;color:#2c2418">${renderInlineHtml(content,"#2c2418")}</div>`;
         }).join("");
       };
 
@@ -469,9 +495,9 @@
         if(!hasPlan && !hasNotes) return "";
         return `
         <div style="border-left:4px solid ${badgeHex};background:#fff;border-radius:8px;padding:14px 16px;margin-bottom:10px;box-shadow:0 1px 4px rgba(0,0,0,0.07)">
-          <div style="font-family:'Lora',serif;font-size:16px;font-weight:600;color:${badgeHex};margin-bottom:10px;text-transform:capitalize">${esc(fmtLong(day.date))}</div>
-          ${hasPlan?`<div style="margin-bottom:${hasNotes?12:0}px">${renderHtmlBlock(day.planning)}</div>`:""}
-          ${hasNotes?`<div style="background:#f0f7fc;border-radius:6px;padding:10px 12px;border:1px solid #b8d9ed"><div style="font-size:10px;font-weight:700;color:#2a7fa8;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">📌 Infos pratiques</div>${renderHtmlBlock(day.notes)}</div>`:""}
+          <div style="font-family:'Lora',serif;font-size:16px;font-weight:600;color:${badgeHex};margin-bottom:10px;text-transform:capitalize">${escHtml(fmtLong(day.date))}</div>
+          ${hasPlan?`<div style="margin-bottom:${hasNotes?12:0}px">${renderHtmlBlock(day.planning,false)}</div>`:""}
+          ${hasNotes?`<div style="background:#f0f7fc;border-radius:6px;padding:10px 12px;border:1px solid #b8d9ed"><div style="font-size:10px;font-weight:700;color:#2a7fa8;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">📌 Infos pratiques</div>${renderHtmlBlock(day.notes,true)}</div>`:""}
         </div>`;
       }).join("");
 
@@ -479,18 +505,18 @@
         const badgeHex = card.color?BADGE_COLORS.find(c=>c.id===card.color)?.hex:"#2a7fa8";
         const isTodo = card.kind==="todo";
         const content = isTodo
-          ? (card.todos||[]).map(t=>`<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #e2d9cc"><div style="width:16px;height:16px;border-radius:3px;border:2px solid ${t.done?"#2a7fa8":"#cdc3b4"};background:${t.done?"#2a7fa8":"transparent"};flex-shrink:0;display:flex;align-items:center;justify-content:center">${t.done?`<span style="color:#fff;font-size:9px;font-weight:700">✓</span>`:""}</div><span style="font-size:13px;color:${t.done?"#8a7e6e":"#2c2418"};text-decoration:${t.done?"line-through":"none"}">${esc(t.text)}</span></div>`).join("")
-          : renderHtmlBlock(card.content);
+          ? (card.todos||[]).map(t=>`<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #e2d9cc"><div style="width:16px;height:16px;border-radius:3px;border:2px solid ${t.done?"#2a7fa8":"#cdc3b4"};background:${t.done?"#2a7fa8":"transparent"};flex-shrink:0;display:flex;align-items:center;justify-content:center">${t.done?`<span style="color:#fff;font-size:9px;font-weight:700">✓</span>`:""}</div><span style="font-size:13px;color:${t.done?"#8a7e6e":"#2c2418"};text-decoration:${t.done?"line-through":"none"}">${escHtml(t.text)}</span></div>`).join("")
+          : renderHtmlBlock(card.content,true);
         return `
         <div style="border-left:4px solid ${badgeHex};background:#fff;border-radius:8px;padding:12px 14px;box-shadow:0 1px 4px rgba(0,0,0,0.07)">
-          <div style="font-weight:600;font-size:13px;color:#2c2418;margin-bottom:8px">${isTodo?"☑":"📋"} ${esc(card.title||"Sans titre")}</div>
+          <div style="font-weight:600;font-size:13px;color:#2c2418;margin-bottom:8px">${isTodo?"☑":"📋"} ${escHtml(card.title||"Sans titre")}</div>
           ${content}
         </div>`;
       }).join("");
 
-      const html = `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(data.name)}</title><link href="https://fonts.googleapis.com/css2?family=Lora:wght@500;600&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet"><style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:'DM Sans',sans-serif;background:#f5f0e8;color:#2c2418;padding:20px;max-width:680px;margin:0 auto}h1{font-family:'Lora',serif;font-size:22px;font-weight:600;margin-bottom:4px}h2{font-family:'Lora',serif;font-size:16px;font-weight:600;color:#c4622a;margin:24px 0 10px;border-bottom:2px solid #e2d9cc;padding-bottom:6px}.meta{font-size:12px;color:#8a7e6e;margin-bottom:20px}.cards-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}@media(max-width:500px){.cards-grid{grid-template-columns:1fr}}.footer{text-align:center;font-size:11px;color:#8a7e6e;margin-top:32px;padding-top:12px;border-top:1px solid #e2d9cc}</style></head><body>
-      <h1>${esc(data.name)}</h1>
-      <div class="meta">${tripLabel?esc(tripLabel)+" · ":""} ${activeDays.length} jours · Généré le ${new Date().toLocaleDateString("fr-FR")}</div>
+      const html = `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escHtml(data.name)}</title><link href="https://fonts.googleapis.com/css2?family=Lora:wght@500;600&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet"><style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:'DM Sans',sans-serif;background:#f5f0e8;color:#2c2418;padding:20px;max-width:680px;margin:0 auto}h1{font-family:'Lora',serif;font-size:22px;font-weight:600;margin-bottom:4px}h2{font-family:'Lora',serif;font-size:16px;font-weight:600;color:#c4622a;margin:24px 0 10px;border-bottom:2px solid #e2d9cc;padding-bottom:6px}.meta{font-size:12px;color:#8a7e6e;margin-bottom:20px}.cards-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}@media(max-width:500px){.cards-grid{grid-template-columns:1fr}}.footer{text-align:center;font-size:11px;color:#8a7e6e;margin-top:32px;padding-top:12px;border-top:1px solid #e2d9cc}</style></head><body>
+      <h1>${escHtml(data.name)}</h1>
+      <div class="meta">${tripLabel?escHtml(tripLabel)+" · ":""} ${activeDays.length} jours · Généré le ${new Date().toLocaleDateString("fr-FR")}</div>
       ${daysHtml?`<h2>📅 Programme</h2>${daysHtml}`:""}
       ${cardsHtml?`<h2>📋 Infos voyage</h2><div class="cards-grid">${cardsHtml}</div>`:""}
       <div class="footer">Planning Voyage v2.1</div>
@@ -713,7 +739,10 @@
         {/* Modal */}
         {modal&&<EditModal modal={modal} form={form} setForm={setForm} onClose={closeModal}
           onSaveDay={saveDay} onSaveCard={saveCard} onSaveTrip={saveTrip}
-          onGenerateDays={generateDays} onDeleteDay={deleteDay} onDeleteCard={deleteCard} safeBot={safeBot}/>}
+          onGenerateDays={generateDays}
+          onDeleteDay={id=>showConfirm("Supprimer ce jour et tout son contenu ? Cette action est irréversible.", ()=>deleteDay(id))}
+          onDeleteCard={id=>showConfirm("Supprimer cette carte ? Cette action est irréversible.", ()=>deleteCard(id))}
+          safeBot={safeBot}/>}
       </div>
     );
   }
