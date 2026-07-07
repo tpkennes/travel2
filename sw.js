@@ -11,14 +11,23 @@ const BYPASS = [
   "gist.githubusercontent.com",
   "fonts.googleapis.com",
   "fonts.gstatic.com",
-  "unpkg.com",
 ];
 
-/* ── Installation : mise en cache de la page principale ── */
+/* Fichiers essentiels au démarrage — précachés dès l'installation pour que
+   l'app fonctionne hors ligne dès le premier lancement (React/ReactDOM/Babel
+   sont hébergés localement, plus besoin du réseau pour les charger). */
+const PRECACHE = [
+  "./",
+  "vendor/react.production.min.js",
+  "vendor/react-dom.production.min.js",
+  "vendor/babel.min.js",
+];
+
+/* ── Installation : mise en cache des fichiers essentiels ── */
 self.addEventListener("install", e => {
   e.waitUntil(
     caches.open(CACHE_NAME)
-      .then(cache => cache.add("./"))
+      .then(cache => cache.addAll(PRECACHE))
       .then(() => self.skipWaiting())
       .catch(() => self.skipWaiting())
   );

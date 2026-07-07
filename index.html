@@ -10,9 +10,9 @@
   <link rel="manifest" href="manifest.json"/>
   <title>Planning Voyage v2</title>
   <link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,500;0,600;1,500&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&display=swap" rel="stylesheet"/>
-  <script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js" crossorigin></script>
-  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js" crossorigin></script>
-  <script src="https://unpkg.com/@babel/standalone@7.25.6/babel.min.js"></script>
+  <script src="vendor/react.production.min.js"></script>
+  <script src="vendor/react-dom.production.min.js"></script>
+  <script src="vendor/babel.min.js"></script>
   <style>
     *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
     html,body{height:100%;overscroll-behavior:none;transition:background 0.2s}
@@ -652,6 +652,8 @@
             </div>
             <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
               <button onClick={()=>{setShowSearch(!showSearch);setSearchQuery("");}} style={{padding:"5px 9px",borderRadius:8,background:showSearch?`${C.accent}15`:C.surface,border:`1px solid ${showSearch?C.accent:C.border2}`,color:showSearch?C.accent:C.muted,fontSize:13,cursor:"pointer"}} title="Rechercher">🔍</button>
+              <button onClick={generateShareHtml} style={{padding:"5px 9px",borderRadius:8,background:C.surface,border:`1px solid ${C.border2}`,color:C.muted,fontSize:13,cursor:"pointer"}} title="Exporter en page partageable">📤</button>
+              <button onClick={()=>saveSettings({...settings,theme:currentTheme==="light"?"dark":"light"})} style={{padding:"5px 9px",borderRadius:8,background:C.surface,border:`1px solid ${C.border2}`,color:C.muted,fontSize:13,cursor:"pointer"}} title="Changer de thème">{currentTheme==="light"?"🌙":"☀️"}</button>
               <div style={{fontSize:10,color:syncing?C.accent:C.muted,minWidth:16,textAlign:"center"}}>{syncing?"⟳":"✓"}</div>
               <button onClick={()=>setShowSettings(true)} style={{padding:"5px 9px",borderRadius:8,background:C.surface,border:`1px solid ${C.border2}`,color:C.muted,fontSize:14,cursor:"pointer"}}>⚙️</button>
               <button onClick={()=>openModal(tab==="days"?"day":"card")} style={{padding:"5px 11px",borderRadius:8,background:C.accent,border:"none",color:C.onAccent,fontSize:16,fontWeight:700,cursor:"pointer",lineHeight:1}} title="Ajouter">+</button>
@@ -847,7 +849,7 @@
         {toast&&<div style={{position:"fixed",top:`calc(12px + ${safeTop})`,left:"50%",transform:"translateX(-50%)",background:currentTheme==="dark"?"#2c2c2e":"#2c2418",borderRadius:10,padding:"10px 18px",fontSize:13,color:"#fff",zIndex:100,whiteSpace:"nowrap",boxShadow:"0 4px 20px rgba(0,0,0,0.3)",border:`1px solid ${C.border}`}}>{toast}</div>}
 
         {/* Settings */}
-        {showSettings&&<SettingsPanel settings={settings} onChange={saveSettings} onClose={()=>setShowSettings(false)} safeBot={safeBot} exportData={exportData} importData={importData} loadFromUrl={loadFromUrl} copyJson={copyJson} publishToGist={publishToGist} generateShareHtml={generateShareHtml}/>}
+        {showSettings&&<SettingsPanel settings={settings} onChange={saveSettings} onClose={()=>setShowSettings(false)} safeBot={safeBot} exportData={exportData} importData={importData} loadFromUrl={loadFromUrl} copyJson={copyJson} publishToGist={publishToGist}/>}
 
         {/* Modal */}
         {modal&&<EditModal modal={modal} form={form} setForm={setForm} onClose={closeModal}
@@ -1113,8 +1115,7 @@
   }
 
   /* ════════ SETTINGS PANEL ════════ */
-  function SettingsPanel({settings,onChange,onClose,safeBot,exportData,importData,loadFromUrl,copyJson,publishToGist,generateShareHtml}) {
-    const [settingsTab,    setSettingsTab]    = useState("user");
+  function SettingsPanel({settings,onChange,onClose,safeBot,exportData,importData,loadFromUrl,copyJson,publishToGist}) {
     const [showHelp,       setShowHelp]       = useState(false);
     const [showLocalHelp,  setShowLocalHelp]  = useState(false);
     const [showToken,      setShowToken]      = useState(false);
@@ -1136,16 +1137,7 @@
             <button onClick={onClose} style={{background:"none",border:"none",color:C.muted,fontSize:22,cursor:"pointer"}}>✕</button>
           </div>
 
-          {/* Tabs — même segmented control que Programme/Infos voyage */}
-          <div style={{position:"relative",display:"flex",margin:"0 0 16px",padding:3,background:C.surface2,border:`1px solid ${C.border}`,borderRadius:10}}>
-            <div style={{position:"absolute",top:3,bottom:3,left:3,width:"calc(50% - 3px)",borderRadius:8,background:C.surface,boxShadow:"0 1px 3px rgba(0,0,0,0.15)",transform:settingsTab==="user"?"translateX(0%)":"translateX(100%)",transition:"transform 0.28s cubic-bezier(0.32,0.72,0,1)"}}/>
-            {[["user","👤 Utilisateur"],["organizer","🗂️ Organisateur"]].map(([id,label])=>(
-              <button key={id} onClick={()=>setSettingsTab(id)} style={{flex:1,position:"relative",zIndex:1,padding:"7px 0",background:"none",border:"none",cursor:"pointer",color:settingsTab===id?C.text:C.muted,fontSize:13,fontWeight:settingsTab===id?600:500,transition:"color 0.15s"}}>{label}</button>
-            ))}
-          </div>
-
-          {settingsTab==="user"&&(<>
-          {/* ── SYNCHRONISER (lien partagé en lecture) ── */}
+          {/* ── 1. SYNCHRONISER (lien partagé en lecture) ── */}
           <div style={section}>
             <div style={sectionTitle}><span>🔄 Synchroniser</span></div>
             <div style={{fontSize:12,color:C.muted,marginBottom:10,lineHeight:1.5}}>Récupère le planning publié par l'organisateur du voyage (lecture seule).</div>
@@ -1156,32 +1148,7 @@
             </button>
           </div>
 
-          {/* ── AFFICHAGE ── */}
-          <div style={section}>
-            <div style={sectionTitle}><span>🎨 Affichage</span></div>
-            <div style={{marginBottom:16}}>
-              <div style={{...lbl,marginBottom:10}}>Thème</div>
-              <div style={{display:"flex",gap:8}}>
-                {[["light","☀️ Clair"],["dark","🌙 Sombre"]].map(([k,l])=>(
-                  <button key={k} onClick={()=>onChange({...settings,theme:k})} style={{flex:1,padding:"10px",borderRadius:9,background:settings.theme===k?`${C.accent}18`:C.surface2,border:`1.5px solid ${settings.theme===k?C.accent:C.border2}`,color:settings.theme===k?C.accent:C.muted,fontSize:13,cursor:"pointer",fontWeight:settings.theme===k?600:400}}>{l}</button>
-                ))}
-              </div>
-            </div>
-            <div style={{marginBottom:16}}>
-              <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}><span style={lbl}>Lignes de programme visibles</span><span style={val}>{settings.previewLines}</span></div>
-              <input type="range" min="1" max="8" step="1" value={settings.previewLines} onChange={e=>onChange({...settings,previewLines:parseInt(e.target.value)})} style={{width:"100%"}}/>
-              <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:C.muted,marginTop:4}}><span>1</span><span>8</span></div>
-            </div>
-            <div>
-              <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}><span style={lbl}>Taille du texte</span><span style={val}>{settings.fontSize}px</span></div>
-              <input type="range" min="11" max="17" step="1" value={settings.fontSize} onChange={e=>onChange({...settings,fontSize:parseInt(e.target.value)})} style={{width:"100%"}}/>
-              <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:C.muted,marginTop:4}}><span>Petit</span><span>Grand</span></div>
-            </div>
-          </div>
-          </>)}
-
-          {settingsTab==="organizer"&&(<>
-          {/* ── PUBLIER (Gist) ── */}
+          {/* ── 2. PUBLIER (Gist) ── */}
           <div style={section}>
             <div style={sectionTitle}>
               <span>📤 Publier les changements</span>
@@ -1209,7 +1176,7 @@
             </button>
           </div>
 
-          {/* ── FICHIER LOCAL ── */}
+          {/* ── 3. FICHIER LOCAL ── */}
           <div style={section}>
             <div style={sectionTitle}>
               <span>📁 Fichier local</span>
@@ -1222,9 +1189,33 @@
               </label>
             </div>
             <button onClick={copyJson} style={{width:"100%",marginTop:8,padding:"11px",borderRadius:9,background:C.surface,border:`1px solid ${C.border2}`,color:C.text,fontSize:13,fontWeight:500,cursor:"pointer"}}>📋 Copier le JSON</button>
-            <button onClick={generateShareHtml} style={{width:"100%",marginTop:8,padding:"11px",borderRadius:9,background:C.surface,border:`1px solid ${C.border2}`,color:C.text,fontSize:13,fontWeight:500,cursor:"pointer"}}>📤 Exporter en page partageable</button>
           </div>
-          </>)}
+
+          {/* ── 4. AFFICHAGE ── */}
+          <div style={section}>
+            <div style={sectionTitle}><span>🎨 Affichage</span></div>
+            <div style={{marginBottom:16}}>
+              <div style={{...lbl,marginBottom:10}}>Thème</div>
+              <div style={{display:"flex",gap:8}}>
+                {[["light","☀️ Clair"],["dark","🌙 Sombre"]].map(([k,l])=>(
+                  <button key={k} onClick={()=>onChange({...settings,theme:k})} style={{flex:1,padding:"10px",borderRadius:9,background:settings.theme===k?`${C.accent}18`:C.surface2,border:`1.5px solid ${settings.theme===k?C.accent:C.border2}`,color:settings.theme===k?C.accent:C.muted,fontSize:13,cursor:"pointer",fontWeight:settings.theme===k?600:400}}>{l}</button>
+                ))}
+              </div>
+            </div>
+            <div style={{marginBottom:16}}>
+              <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}><span style={lbl}>Lignes de programme visibles</span><span style={val}>{settings.previewLines}</span></div>
+              <input type="range" min="1" max="8" step="1" value={settings.previewLines} onChange={e=>onChange({...settings,previewLines:parseInt(e.target.value)})} style={{width:"100%"}}/>
+              <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:C.muted,marginTop:4}}><span>1</span><span>8</span></div>
+            </div>
+            <div>
+              <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}><span style={lbl}>Taille du texte</span><span style={val}>{settings.fontSize}px</span></div>
+              <input type="range" min="11" max="17" step="1" value={settings.fontSize} onChange={e=>onChange({...settings,fontSize:parseInt(e.target.value)})} style={{width:"100%"}}/>
+              <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:C.muted,marginTop:4}}><span>Petit</span><span>Grand</span></div>
+            </div>
+          </div>
+
+          {/* ── AIDE MARKDOWN ── */}
+          <MarkdownHelp/>
         </div>
         {showHelp && <HelpLinkModal onClose={()=>setShowHelp(false)} safeBot={safeBot}/>}
         {showLocalHelp  && <HelpLocalModal  onClose={()=>setShowLocalHelp(false)}  safeBot={safeBot}/>}
