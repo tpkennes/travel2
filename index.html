@@ -63,7 +63,7 @@
     .day-row td{padding:0;vertical-align:middle;overflow:hidden;transition:background 0.15s,opacity 0.2s}
     /* Hairline separator inset like an iOS table view — starts after the date
        column instead of full-bleed, and the date column itself stays bare. */
-    .day-row td:not(:first-child){border-bottom:1px solid var(--border)}
+    .day-row td:not(:first-child){border-bottom:1px solid var(--row-border)}
 
   </style>
 </head>
@@ -101,7 +101,7 @@
   const THEMES = {
     light: {
       bg:"#f5f0e8", surface:"#ffffff", surface2:"#faf7f2",
-      border:"#e2d9cc", border2:"#cdc3b4",
+      border:"#e2d9cc", border2:"#cdc3b4", rowBorder:"#e2d9cc",
       accent:"#c4622a", accent2:"#2a7fa8",
       text:"#2c2418", muted:"#6e6455", danger:"#b83030",
       onAccent:"#ffffff", hover:"#f0ebe0",
@@ -109,7 +109,10 @@
     },
     dark: {
       bg:"#0f0f0f", surface:"#1c1c1e", surface2:"#242426",
-      border:"#2e2e30", border2:"#3c3c3e",
+      // rowBorder délibérément plus clair que border/border2 : à #2e2e30 (border)
+      // le hairline entre les lignes du tableau se distinguait mal des fonds de
+      // ligne alternés (#1c1c1e/#1f1f21), qui sont très proches en luminosité.
+      border:"#2e2e30", border2:"#3c3c3e", rowBorder:"#48484c",
       accent:"#e88a56", accent2:"#5aa8d4",
       text:"#ededed", muted:"#8e8e93", danger:"#ff6b6b",
       onAccent:"#0f0f0f", hover:"#252527",
@@ -163,6 +166,7 @@
     document.documentElement.style.setProperty("--bg", C.bg);
     document.documentElement.style.setProperty("--border", C.border);
     document.documentElement.style.setProperty("--border2", C.border2);
+    document.documentElement.style.setProperty("--row-border", C.rowBorder);
     document.documentElement.style.setProperty("--hover", C.hover);
     let styleEl = document.getElementById("dyn-theme-style");
     if(!styleEl) { styleEl = document.createElement("style"); styleEl.id = "dyn-theme-style"; document.head.appendChild(styleEl); }
@@ -191,7 +195,7 @@
      (renderInlineHtml/renderHtmlBlock in generateShareHtml) so the two never
      drift out of sync on supported syntax. */
   const parseInline = (text, colors=INLINE_COLORS) => {
-    const rx = /(\*\*(.+?)\*\*)|(\*(.+?)\*)|(__(.*?)__)|\{([romvftbd]):(.+?)\}|(https?:\/\/[^\s]+)|(\b\d{1,2}[h:]\d{2}(?:am|pm)?\b|\b\d{1,2}(?:am|pm)\b)/gi;
+    const rx = /(\*\*(.+?)\*\*)|(\*(.+?)\*)|(__(.*?)__)|\{([romvftbd]):(.+?)\}|(https?:\/\/[^\s]+)|(\b\d{1,2}[h:]\d{2}(?:am|pm)?\b|\b\d{1,2}(?:am|pm)\b|\b(?:matin|après-midi|soir)\b)/gi;
     const parts=[]; let last=0; let m;
     while((m=rx.exec(text))!==null){
       if(m.index>last) parts.push({t:"text",v:text.slice(last,m.index)});
@@ -219,7 +223,7 @@
     if(p.t==="italic")    return <em key={i} style={{fontStyle:"italic"}}>{p.v}</em>;
     if(p.t==="underline") return <span key={i} style={{textDecoration:"underline"}}>{p.v}</span>;
     if(p.t==="color")     return <span key={i} style={{color:p.color}}>{renderInline(p.v,p.color)}</span>;
-    if(p.t==="time")      return <strong key={i} style={{fontWeight:600,color:baseColor}}>{p.v}</strong>;
+    if(p.t==="time")      return <span key={i} style={{display:"inline-flex",justifyContent:"center",minWidth:"3.6em",padding:"1px 7px",borderRadius:7,background:`${C.accent}12`,border:`1px solid ${C.accent}30`,color:C.accent,fontWeight:700,fontSize:"0.86em",lineHeight:1.5}}>{p.v}</span>;
     if(p.t==="url")       return <a key={i} href={p.v} target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()} style={{color:C.accent2,textDecoration:"underline",fontSize:"0.88em",wordBreak:"break-all",overflowWrap:"anywhere"}}>{p.v}</a>;
     return <span key={i}>{p.v}</span>;
   });
@@ -260,12 +264,22 @@
     if(p.t==="italic")    return `<em>${escHtml(p.v)}</em>`;
     if(p.t==="underline") return `<u>${escHtml(p.v)}</u>`;
     if(p.t==="color")     return `<span style="color:${p.color}">${renderInlineHtml(p.v,p.color,colors)}</span>`;
-    if(p.t==="time")      return `<strong style="font-weight:600;color:${baseColor}">${escHtml(p.v)}</strong>`;
+    if(p.t==="time")      return `<span style="display:inline-flex;justify-content:center;min-width:3.6em;padding:1px 7px;border-radius:7px;background:#c4622a12;border:1px solid #c4622a30;color:#c4622a;font-weight:700;font-size:0.86em;line-height:1.5">${escHtml(p.v)}</span>`;
     if(p.t==="url")       return `<a href="${escHtml(p.v)}" target="_blank" style="color:#2a7fa8;text-decoration:underline;word-break:break-all">${escHtml(p.v)}</a>`;
     return escHtml(p.v);
   }).join("");
 
   const stripMd = t => (t||"").replace(/^# /,"").replace(/\*\*(.+?)\*\*/g,"$1").replace(/\*(.+?)\*/g,"$1").replace(/__(.*?)__/g,"$1").replace(/\{[romvftbd]:(.+?)\}/g,"$1").replace(/^> /,"");
+
+  /* Ferme un sheet/modal seulement si le clic a démarré ET fini sur le fond
+     lui-même. Sans le check sur onMouseDown, sélectionner du texte dans un
+     champ puis relâcher la souris hors du panneau fermait le sheet — le
+     navigateur résout le "click" sur le fond dès que le mouseup s'y trouve,
+     même si le mousedown avait démarré à l'intérieur du panneau. */
+  const backdropHandlers = (downRef, onClose) => ({
+    onMouseDown: e => { downRef.current = e.target===e.currentTarget; },
+    onClick: e => { if(downRef.current && e.target===e.currentTarget) onClose(); },
+  });
 
   /* ════════ COLOR PICKER ════════ */
   function ColorPicker({value, onChange}) {
@@ -428,6 +442,7 @@
     const [showSettings,setShowSettings] = useState(false);
     const [showArchivedDays,setShowArchivedDays] = useState(false);
     const [showArchivedCards,setShowArchivedCards] = useState(false);
+    const confirmBackdropDown = useRef(false);
 
     const save = nd => {
       setData(nd); setSyncing(true);
@@ -661,7 +676,7 @@
       <div class="meta">${tripLabel?escHtml(tripLabel)+" · ":""} ${activeDays.length} jours · Généré le ${new Date().toLocaleDateString("fr-FR")}</div>
       ${daysHtml?`<h2>📅 Programme</h2>${daysHtml}`:""}
       ${cardsHtml?`<h2>📋 Infos voyage</h2><div class="cards-grid">${cardsHtml}</div>`:""}
-      <div class="footer">Planning Voyage v3.0.2</div>
+      <div class="footer">Planning Voyage v3.0.5</div>
       </body></html>`;
 
       const blob = new Blob([html], {type:"text/html"});
@@ -754,7 +769,7 @@
             );
             return (
               <div>
-                <table className="day-table" style={{"--bg":C.bg,"--border":C.border,"--border2":C.border2,"--hover":C.hover}}>
+                <table className="day-table" style={{"--bg":C.bg,"--border":C.border,"--border2":C.border2,"--row-border":C.rowBorder,"--hover":C.hover}}>
                   <tbody>
                     {activeDays.map((day,i)=>(
                       <DayRow key={day.id} day={day}
@@ -774,7 +789,7 @@
                   </div>
                 )}
                 {showArchivedDays&&archivedDays.length>0&&(
-                  <table className="day-table" style={{marginTop:8,opacity:0.65,"--bg":C.bg,"--border":C.border,"--border2":C.border2,"--hover":C.hover}}>
+                  <table className="day-table" style={{marginTop:8,opacity:0.65,"--bg":C.bg,"--border":C.border,"--border2":C.border2,"--row-border":C.rowBorder,"--hover":C.hover}}>
                     <tbody>
                       {archivedDays.map((day,i)=>(
                         <DayRow key={day.id} day={day}
@@ -808,7 +823,7 @@
             );
             return (
               <div>
-                <table className="day-table" style={{"--bg":C.bg,"--border":C.border,"--border2":C.border2,"--hover":C.hover}}>
+                <table className="day-table" style={{"--bg":C.bg,"--border":C.border,"--border2":C.border2,"--row-border":C.rowBorder,"--hover":C.hover}}>
                   <tbody>
                     {activeCards.map((card,i)=>(
                       <InfoCard key={card.id} card={card}
@@ -840,7 +855,7 @@
           })()}
         </div>
 
-        <div style={{textAlign:"center",padding:"6px 0 0",fontSize:10,color:`${C.muted}88`,letterSpacing:0.5}}>v3.0.2</div>
+        <div style={{textAlign:"center",padding:"6px 0 0",fontSize:10,color:`${C.muted}88`,letterSpacing:0.5}}>v3.0.5</div>
 
         {/* Day detail — pushed screen */}
         {detailDayId&&(()=>{
@@ -878,7 +893,7 @@
 
         {/* Confirm dialog */}
         {confirm&&(
-          <div onClick={()=>setConfirm(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",zIndex:60,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+          <div {...backdropHandlers(confirmBackdropDown,()=>setConfirm(null))} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",zIndex:60,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
             <div onClick={e=>e.stopPropagation()} style={{background:C.surface,borderRadius:16,padding:"24px 20px",maxWidth:340,width:"100%",border:`1px solid ${C.border2}`,boxShadow:"0 8px 32px rgba(0,0,0,0.2)"}}>
               <div style={{fontSize:22,textAlign:"center",marginBottom:12}}>⚠️</div>
               <div style={{fontSize:14,color:C.text,lineHeight:1.6,marginBottom:20,textAlign:"center"}}>{confirm.message}</div>
@@ -1165,6 +1180,7 @@
     const [showHelp,       setShowHelp]       = useState(false);
     const [showLocalHelp,  setShowLocalHelp]  = useState(false);
     const [showToken,      setShowToken]      = useState(false);
+    const downOnBackdrop = useRef(false);
     const lbl={fontSize:13,color:C.text,fontWeight:500};
     const val={fontSize:13,color:C.accent,fontWeight:600,minWidth:28,textAlign:"right"};
     const inp={width:"100%",padding:"10px 12px",borderRadius:9,background:C.surface2,border:`1px solid ${C.border2}`,color:C.text,fontSize:16,outline:"none",minWidth:0};
@@ -1175,7 +1191,7 @@
     const syncReady  = !!settings.remoteUrl?.trim();
 
     return (
-      <div className="sheet-backdrop" onClick={e=>e.target===e.currentTarget&&onClose()} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.35)",zIndex:50,display:"flex",flexDirection:"column",justifyContent:"flex-end"}}>
+      <div className="sheet-backdrop" {...backdropHandlers(downOnBackdrop,onClose)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.35)",zIndex:50,display:"flex",flexDirection:"column",justifyContent:"flex-end"}}>
         <div className="sheet-panel" style={{background:C.surface,borderRadius:"20px 20px 0 0",border:`1px solid ${C.border}`,padding:`16px 20px calc(${safeBot} + 20px)`,maxHeight:"90svh",overflowY:"auto",touchAction:"pan-y",width:"100%",maxWidth:"var(--app-max-width)",margin:"0 auto"}}>
           <div style={{width:36,height:4,background:C.border,borderRadius:2,margin:"0 auto 20px"}}/>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
@@ -1286,8 +1302,9 @@
     const code={background:C.surface2,padding:"2px 6px",borderRadius:4,fontFamily:"monospace",fontSize:12,color:C.accent,border:`1px solid ${C.border}`,wordBreak:"break-all"};
     const step={fontSize:13,color:C.text,lineHeight:1.65,marginBottom:10,paddingLeft:22,position:"relative"};
     const num={position:"absolute",left:0,top:0,width:16,height:16,borderRadius:"50%",background:C.accent,color:C.onAccent,fontSize:10,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center"};
+    const downOnBackdrop = useRef(false);
     return (
-      <div className="sheet-backdrop" onClick={e=>e.target===e.currentTarget&&onClose()} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:60,display:"flex",flexDirection:"column",justifyContent:"flex-end"}}>
+      <div className="sheet-backdrop" {...backdropHandlers(downOnBackdrop,onClose)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:60,display:"flex",flexDirection:"column",justifyContent:"flex-end"}}>
         <div className="sheet-panel" style={{background:C.surface,borderRadius:"20px 20px 0 0",border:`1px solid ${C.border}`,padding:`16px 20px calc(${safeBot} + 20px)`,maxHeight:"92svh",overflowY:"auto",touchAction:"pan-y",width:"100%",maxWidth:"var(--app-max-width)",margin:"0 auto"}}>
           <div style={{width:36,height:4,background:C.border,borderRadius:2,margin:"0 auto 20px"}}/>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
@@ -1321,8 +1338,9 @@
   function HelpLocalModal({onClose, safeBot}) {
     const h={fontFamily:C.serif,fontSize:15,fontWeight:600,color:C.accent,margin:"16px 0 8px"};
     const p={fontSize:13,color:C.text,lineHeight:1.65,marginBottom:8};
+    const downOnBackdrop = useRef(false);
     return (
-      <div className="sheet-backdrop" onClick={e=>e.target===e.currentTarget&&onClose()} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:60,display:"flex",flexDirection:"column",justifyContent:"flex-end"}}>
+      <div className="sheet-backdrop" {...backdropHandlers(downOnBackdrop,onClose)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:60,display:"flex",flexDirection:"column",justifyContent:"flex-end"}}>
         <div className="sheet-panel" style={{background:C.surface,borderRadius:"20px 20px 0 0",border:`1px solid ${C.border}`,padding:`16px 20px calc(${safeBot} + 20px)`,maxHeight:"92svh",overflowY:"auto",touchAction:"pan-y",width:"100%",maxWidth:"var(--app-max-width)",margin:"0 auto"}}>
           <div style={{width:36,height:4,background:C.border,borderRadius:2,margin:"0 auto 20px"}}/>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
@@ -1368,9 +1386,10 @@
       setNewTodo("");
     };
     const removeTodo = id => setForm({...form, todos:(form.todos||[]).filter(t=>t.id!==id)});
+    const downOnBackdrop = useRef(false);
 
     return (
-      <div className="sheet-backdrop" onClick={e=>e.target===e.currentTarget&&onClose()} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.35)",zIndex:50,display:"flex",flexDirection:"column",justifyContent:"flex-end"}}>
+      <div className="sheet-backdrop" {...backdropHandlers(downOnBackdrop,onClose)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.35)",zIndex:50,display:"flex",flexDirection:"column",justifyContent:"flex-end"}}>
         <div className="sheet-panel" style={{background:C.surface,borderRadius:"20px 20px 0 0",border:`1px solid ${C.border}`,padding:`16px 20px calc(${safeBot} + 24px)`,maxHeight:"90svh",overflowY:"auto",touchAction:"pan-y",width:"100%",maxWidth:"var(--app-max-width)",margin:"0 auto"}}>
           <div style={{width:36,height:4,background:C.border,borderRadius:2,margin:"0 auto 20px"}}/>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
