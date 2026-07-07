@@ -1,9 +1,9 @@
 /* ══════════════════════════════════════════
-   Planning Voyage v2.3 — Service Worker
+   Planning Voyage v3.0 — Service Worker
    Stratégie : Network-first avec fallback cache
    ══════════════════════════════════════════ */
 
-const CACHE_NAME = "planning-voyage-v2.3";
+const CACHE_NAME = "planning-voyage-v3.0";
 
 /* URLs à exclure du cache (toujours en ligne) */
 const BYPASS = [
@@ -21,6 +21,7 @@ const PRECACHE = [
   "vendor/react.production.min.js",
   "vendor/react-dom.production.min.js",
   "vendor/babel.min.js",
+  "icon-192.png",
 ];
 
 /* ── Installation : mise en cache des fichiers essentiels ── */

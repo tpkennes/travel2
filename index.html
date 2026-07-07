@@ -8,11 +8,14 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default"/>
   <meta name="apple-mobile-web-app-title" content="Planning Voyage"/>
   <link rel="manifest" href="manifest.json"/>
-  <title>Planning Voyage v2</title>
+  <title>Planning Voyage v3</title>
   <link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,500;0,600;1,500&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&display=swap" rel="stylesheet"/>
-  <script src="vendor/react.production.min.js"></script>
-  <script src="vendor/react-dom.production.min.js"></script>
-  <script src="vendor/babel.min.js"></script>
+  <!-- defer : laisse le navigateur parser <body> (donc afficher le splash)
+       pendant que ces 3 fichiers se téléchargent, au lieu de bloquer sur eux.
+       L'ordre d'exécution reste garanti (React avant ReactDOM avant Babel). -->
+  <script src="vendor/react.production.min.js" defer></script>
+  <script src="vendor/react-dom.production.min.js" defer></script>
+  <script src="vendor/babel.min.js" defer></script>
   <style>
     *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
     html,body{height:100%;overscroll-behavior:none;transition:background 0.2s}
@@ -65,6 +68,23 @@
   </style>
 </head>
 <body>
+<!-- Splash statique : React/Babel doivent encore se charger et transpiler ~3 Mo
+     de JS avant le premier rendu, donc sans ça l'écran reste blanc un instant à
+     chaque lancement. Pur HTML/CSS, aucune dépendance JS pour s'afficher — la
+     couleur reprend le thème stocké pour éviter un flash de la mauvaise teinte. -->
+<div id="splash" style="position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:#f5f0e8;transition:opacity 0.25s ease">
+  <img src="icon-192.png" width="72" height="72" style="border-radius:16px" alt=""/>
+  <div id="splash-label" style="font-family:Georgia,'Times New Roman',serif;font-size:17px;font-weight:600;color:#2c2418;letter-spacing:0.3px">Planning Voyage</div>
+</div>
+<script>
+  try {
+    var s = JSON.parse(localStorage.getItem("tripplanner_settings")||"{}");
+    if (s.theme === "dark") {
+      document.getElementById("splash").style.background = "#0f0f0f";
+      document.getElementById("splash-label").style.color = "#ededed";
+    }
+  } catch(e) {}
+</script>
 <div id="root"></div>
 <script type="text/babel">
   const { useState, useRef, useEffect } = React;
@@ -620,7 +640,7 @@
       <div class="meta">${tripLabel?escHtml(tripLabel)+" · ":""} ${activeDays.length} jours · Généré le ${new Date().toLocaleDateString("fr-FR")}</div>
       ${daysHtml?`<h2>📅 Programme</h2>${daysHtml}`:""}
       ${cardsHtml?`<h2>📋 Infos voyage</h2><div class="cards-grid">${cardsHtml}</div>`:""}
-      <div class="footer">Planning Voyage v2.3</div>
+      <div class="footer">Planning Voyage v3.0</div>
       </body></html>`;
 
       const blob = new Blob([html], {type:"text/html"});
@@ -799,7 +819,7 @@
           })()}
         </div>
 
-        <div style={{textAlign:"center",padding:"6px 0 0",fontSize:10,color:`${C.muted}88`,letterSpacing:0.5}}>v2.3</div>
+        <div style={{textAlign:"center",padding:"6px 0 0",fontSize:10,color:`${C.muted}88`,letterSpacing:0.5}}>v3.0</div>
 
         {/* Day detail — pushed screen */}
         {detailDayId&&(()=>{
@@ -1442,6 +1462,16 @@
 
   const root = ReactDOM.createRoot(document.getElementById("root"));
   root.render(<App/>);
+
+  /* Double rAF : le 1er est planifié avant le prochain paint, le 2e s'exécute
+     une fois ce paint effectué — garantit que l'app est bien visible derrière
+     avant de lancer le fondu du splash. */
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    const splash = document.getElementById("splash");
+    if (!splash) return;
+    splash.style.opacity = "0";
+    setTimeout(() => splash.remove(), 250);
+  }));
 </script>
 
 <script>
