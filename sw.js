@@ -1,9 +1,9 @@
 /* ══════════════════════════════════════════
-   Planning Voyage v3.0 — Service Worker
+   Planning Voyage v3.0.2 — Service Worker
    Stratégie : Network-first avec fallback cache
    ══════════════════════════════════════════ */
 
-const CACHE_NAME = "planning-voyage-v3.0";
+const CACHE_NAME = "planning-voyage-v3.0.2";
 
 /* URLs à exclure du cache (toujours en ligne) */
 const BYPASS = [
@@ -47,7 +47,20 @@ self.addEventListener("activate", e => {
   );
 });
 
-/* ── Fetch : Network-first, fallback cache ── */
+/* Délai max avant de considérer le réseau indisponible et basculer sur le
+   cache. Sans ça, un réseau "ambigu" (interface active mais qui ne répond
+   pas — ex: Wi-Fi connecté à un routeur sans accès internet) fait attendre
+   le timeout TCP par défaut du système (jusqu'à 1-2 minutes) avant que le
+   fetch() rejette et que le fallback cache se déclenche. */
+const NETWORK_TIMEOUT_MS = 4000;
+
+const fetchWithTimeout = (request, ms) => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  return fetch(request, { signal: controller.signal }).finally(() => clearTimeout(timer));
+};
+
+/* ── Fetch : Network-first (avec timeout), fallback cache ── */
 self.addEventListener("fetch", e => {
   if (e.request.method !== "GET") return;
 
@@ -57,7 +70,7 @@ self.addEventListener("fetch", e => {
   if (BYPASS.some(domain => url.includes(domain))) return;
 
   e.respondWith(
-    fetch(e.request)
+    fetchWithTimeout(e.request, NETWORK_TIMEOUT_MS)
       .then(response => {
         /* Mettre en cache si réponse valide */
         if (response && response.status === 200 && response.type !== "opaque") {
@@ -67,7 +80,7 @@ self.addEventListener("fetch", e => {
         return response;
       })
       .catch(() => {
-        /* Hors ligne : servir depuis le cache */
+        /* Hors ligne (ou trop lent) : servir depuis le cache */
         return caches.match(e.request)
           .then(cached => cached || caches.match("./"));
       })

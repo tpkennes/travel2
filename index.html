@@ -249,7 +249,7 @@
     });
   };
 
-  const escHtml = s => (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  const escHtml = s => (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
 
   /* HTML-string counterpart of renderInline, for the static share export.
      Always resolves {r:}..{d:} tags against the light palette regardless of
@@ -523,7 +523,12 @@
     };
     const closeModal = () => { setModal(null); setForm({}); };
 
-    const saveDay  = () => { const days  = modal.item?data.days.map(d=>d.id===modal.item.id?{...d,...form}:d):[...data.days,{id:uid(),...form}];  save({...data,days});  closeModal(); };
+    const saveDay = () => {
+      const dupe = data.days.find(d=>d.date===form.date&&d.id!==modal.item?.id);
+      if(dupe) { showToast("⚠️ Un jour existe déjà à cette date"); return; }
+      const days = modal.item?data.days.map(d=>d.id===modal.item.id?{...d,...form}:d):[...data.days,{id:uid(),...form}];
+      save({...data,days}); closeModal();
+    };
     const saveCard = () => { const cards = modal.item?data.cards.map(c=>c.id===modal.item.id?{...c,...form}:c):[...data.cards,{id:uid(),...form}]; save({...data,cards}); closeModal(); };
     const saveTrip = () => { save({...data,name:form.name,startDate:form.startDate,endDate:form.endDate}); closeModal(); };
 
@@ -548,8 +553,24 @@
 
     const deleteDay  = id => { save({...data,days: data.days.filter(d=>d.id!==id)});  closeModal(); setDetailDayId(cur=>cur===id?null:cur); };
     const deleteCard = id => { save({...data,cards:data.cards.filter(c=>c.id!==id)}); closeModal(); setDetailCardId(cur=>cur===id?null:cur); };
-    const moveDay    = (id,dir) => { const a=[...data.days];  const i=a.findIndex(d=>d.id===id); const ni=i+dir; if(ni<0||ni>=a.length)return; [a[i],a[ni]]=[a[ni],a[i]]; save({...data,days:a}); };
-    const moveCard   = (id,dir) => { const a=[...data.cards]; const i=a.findIndex(c=>c.id===id); const ni=i+dir; if(ni<0||ni>=a.length)return; [a[i],a[ni]]=[a[ni],a[i]]; save({...data,cards:a}); };
+    // Échange avec le prochain élément de même statut d'archivage dans la
+    // direction donnée, en sautant par-dessus ceux de l'autre statut — sinon
+    // ↑/↓ peut échanger avec un jour/carte archivé(e) invisible dans la liste
+    // affichée, et le bouton paraît ne rien faire.
+    const moveDay = (id,dir) => {
+      const a=[...data.days]; const i=a.findIndex(d=>d.id===id); if(i===-1)return;
+      const archived=!!a[i].archived; let j=i+dir;
+      while(j>=0&&j<a.length&&!!a[j].archived!==archived) j+=dir;
+      if(j<0||j>=a.length)return;
+      [a[i],a[j]]=[a[j],a[i]]; save({...data,days:a});
+    };
+    const moveCard = (id,dir) => {
+      const a=[...data.cards]; const i=a.findIndex(c=>c.id===id); if(i===-1)return;
+      const archived=!!a[i].archived; let j=i+dir;
+      while(j>=0&&j<a.length&&!!a[j].archived!==archived) j+=dir;
+      if(j<0||j>=a.length)return;
+      [a[i],a[j]]=[a[j],a[i]]; save({...data,cards:a});
+    };
 
     const toggleTodo = (cardId, todoId) => {
       const cards = data.cards.map(c => { if(c.id!==cardId) return c; return {...c, todos:(c.todos||[]).map(t=>t.id===todoId?{...t,done:!t.done}:t)}; });
@@ -640,7 +661,7 @@
       <div class="meta">${tripLabel?escHtml(tripLabel)+" · ":""} ${activeDays.length} jours · Généré le ${new Date().toLocaleDateString("fr-FR")}</div>
       ${daysHtml?`<h2>📅 Programme</h2>${daysHtml}`:""}
       ${cardsHtml?`<h2>📋 Infos voyage</h2><div class="cards-grid">${cardsHtml}</div>`:""}
-      <div class="footer">Planning Voyage v3.0</div>
+      <div class="footer">Planning Voyage v3.0.2</div>
       </body></html>`;
 
       const blob = new Blob([html], {type:"text/html"});
@@ -819,14 +840,19 @@
           })()}
         </div>
 
-        <div style={{textAlign:"center",padding:"6px 0 0",fontSize:10,color:`${C.muted}88`,letterSpacing:0.5}}>v3.0</div>
+        <div style={{textAlign:"center",padding:"6px 0 0",fontSize:10,color:`${C.muted}88`,letterSpacing:0.5}}>v3.0.2</div>
 
         {/* Day detail — pushed screen */}
         {detailDayId&&(()=>{
           const day = data.days.find(d=>d.id===detailDayId);
           if(!day) return null;
+          // Bornes ↑/↓ basées sur la liste de même statut d'archivage que le
+          // jour affiché (active ou archivée), pas le tableau complet —
+          // sinon les boutons restent activables jusqu'au bord du tableau
+          // même quand il n'y a plus de voisin visible dans la même liste.
+          const siblingDays = data.days.filter(d=>!!d.archived===!!day.archived);
           return (
-            <DayDetailView day={day} index={data.days.indexOf(day)} total={data.days.length} settings={settings}
+            <DayDetailView day={day} index={siblingDays.indexOf(day)} total={siblingDays.length} settings={settings}
               onClose={()=>setDetailDayId(null)}
               onEdit={()=>openModal("day",day)}
               onSwap={()=>startSwap(day.id)}
@@ -839,8 +865,9 @@
         {detailCardId&&(()=>{
           const card = data.cards.find(c=>c.id===detailCardId);
           if(!card) return null;
+          const siblingCards = data.cards.filter(c=>!!c.archived===!!card.archived);
           return (
-            <CardDetailView card={card} index={data.cards.indexOf(card)} total={data.cards.length}
+            <CardDetailView card={card} index={siblingCards.indexOf(card)} total={siblingCards.length}
               onClose={()=>setDetailCardId(null)}
               onEdit={()=>openModal("card",card)}
               onArchive={()=>toggleArchiveCard(card.id)}
