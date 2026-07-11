@@ -1,9 +1,9 @@
 /* ══════════════════════════════════════════
-   Planning Voyage v3.0.5 — Service Worker
+   Planning Voyage v3.0.7 — Service Worker
    Stratégie : Network-first avec fallback cache
    ══════════════════════════════════════════ */
 
-const CACHE_NAME = "planning-voyage-v3.0.5";
+const CACHE_NAME = "planning-voyage-v3.0.7";
 
 /* URLs à exclure du cache (toujours en ligne) */
 const BYPASS = [
